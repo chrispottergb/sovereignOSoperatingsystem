@@ -10,3 +10,7 @@ coverage
 *.tsbuildinfo
 shared-context.json
 mcp-workspace
+
+.test-temp
+supabase/.temp
+supabase/.branches
