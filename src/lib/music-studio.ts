@@ -48,3 +48,5 @@ export function validatorPrompt(config:StudioConfig,brief:MusicBrief,evaluation:
  'The challenger supplied a revision. Validate that revision as the proposed generation input. Check whether it resolves the findings without losing user constraints; compare it with the original evaluator output.',
  JSON.stringify({protocol:{name:config.protocolName,version:config.protocolVersion,text:config.protocolText,requirements:config.qllRequirements},brief,evaluation,challenge}),
 ].join('\n');}
+
+export function sameStudioSettings(a:unknown,b:unknown){const left=studioConfig.safeParse(a),right=studioConfig.safeParse(b);return left.success&&right.success&&JSON.stringify(left.data)===JSON.stringify(right.data);}

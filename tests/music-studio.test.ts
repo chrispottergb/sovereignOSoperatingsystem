@@ -1,5 +1,5 @@
 import {it,expect,vi,afterEach} from 'vitest';
-import {defaultStudioConfig,blankBrief,studioConfig,validationOutput,musicBrief,evaluatorPrompt,type StudioRun} from '../src/lib/music-studio';
+import {sameStudioSettings,defaultStudioConfig,blankBrief,studioConfig,validationOutput,musicBrief,evaluatorPrompt,type StudioRun} from '../src/lib/music-studio';
 const mocks=vi.hoisted(()=>({db:vi.fn(),complete:vi.fn(),queue:vi.fn()}));
 vi.mock('../src/lib/server/astra-store',()=>({db:mocks.db,storageReady:()=>true}));
 vi.mock('../src/lib/server/model-completion',()=>({completion:()=>mocks.complete}));
@@ -29,3 +29,5 @@ it('a changed protocol invalidates previously approved generation',async()=>{moc
 it('only launches the exact challenged and validated prompt with locked controls',async()=>{mocks.db.mockResolvedValueOnce([run]).mockResolvedValueOnce([{config,revision:id}]).mockResolvedValueOnce([]);mocks.queue.mockResolvedValue({id});await generateValidatedMusic(id);expect(mocks.queue).toHaveBeenCalledWith(expect.objectContaining({prompt:challenge.revision.prompt,evaluationId:id,keyScale:'A Minor',bpm:90,seconds:30,environment:'local',requestId:id}));});
 it('registration alone never authorizes arbitrary model execution',async()=>{mocks.db.mockResolvedValueOnce([{...run,brief:{...brief,targetId:'custom-model'}}]).mockResolvedValueOnce([{config,revision:id}]);await expect(generateValidatedMusic(id)).rejects.toMatchObject({code:'ADAPTER_REQUIRED'});expect(mocks.queue).not.toHaveBeenCalled();});
 it('rejects cross-origin studio settings changes',async()=>{vi.stubEnv('APP_PASSWORD','');vi.stubEnv('APP_LOCAL_ONLY','true');vi.stubEnv('APP_ORIGIN','http://127.0.0.1:3100');const r=await POST(new Request('http://127.0.0.1:3100/api/music-studio',{method:'POST',headers:{Origin:'https://other.test','Content-Type':'application/json'},body:JSON.stringify({action:'save',config})}));expect(r.status).toBe(403);expect(mocks.db).not.toHaveBeenCalled();});
+
+it("recognizes database key reordering as the same saved settings",()=>{const reordered=JSON.parse(JSON.stringify(config),(k,v)=>v&&typeof v==="object"&&!Array.isArray(v)?Object.fromEntries(Object.entries(v).reverse()):v);expect(sameStudioSettings(config,reordered)).toBe(true);expect(sameStudioSettings(config,{...config,protocolVersion:"changed"})).toBe(false);});

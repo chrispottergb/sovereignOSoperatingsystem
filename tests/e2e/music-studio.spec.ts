@@ -13,7 +13,7 @@ test('dedicated studio collects choices, runs three roles and gates music on val
   return r.fulfill({json:{configured:true,config,revision:'revision',runs,setup:null,providers:['openai','claude','perplexity','grok'].map(id=>({id,name:id,model:'fixture',configured:true})),specialists:{configured:true,enabled:true,runnerOnline:true},jobs:[]}});
  });
  await page.goto('/music');await expect(page.getByRole('heading',{name:/Shape the sound/})).toBeVisible();
- await expect(page.getByRole('button',{name:'Create model prompt with QLL'})).toBeDisabled();
+ await page.getByRole('button',{name:'Create model prompt with QLL'}).click();await expect(page.getByText('Enter a protocol version, such as v1.',{exact:true})).toBeVisible();
  await page.getByLabel('Your idea',{exact:true}).fill('Make a gentle piano track');await page.getByRole('button',{name:'Lo-fi',exact:true}).click();await page.getByLabel('Musical key').selectOption('A Minor');
  await expect(page.getByRole('button',{name:'Lo-fi',exact:true})).toHaveAttribute('aria-pressed','true');
  await page.getByLabel('Version',{exact:true}).fill('test-v1');await page.getByLabel('Authoritative QLL protocol',{exact:true}).fill('Test-only protocol: preserve requested wording.');await page.getByLabel('QLL output checklist (one requirement per line)',{exact:true}).fill('Preserve requested wording');await page.getByRole('button',{name:'Save evaluator & model settings'}).click();
