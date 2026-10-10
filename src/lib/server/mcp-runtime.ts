@@ -1,4 +1,6 @@
 import {readFile} from 'node:fs/promises';
+import {listSpecialists,specialistJobs} from './specialists';
+import {specialistHelp} from '../specialists';
 import path from 'node:path';
 import {z} from 'zod';
 import {contextSchema,providerIds,type SharedContext} from '../contracts';
@@ -27,7 +29,7 @@ export async function readConnectors(ids:unknown){const parsed=z.array(z.string(
 export async function runSharedCouncil(request:unknown,hub:SharedHub,signal:AbortSignal,connectorIds:string[]=[],complete:Complete=gatewayConfigured()?((provider,prompt,stage)=>gateway({action:"model",provider,prompt,stage},signal)):completion(signal)){
  await hub.init();const [context,memory,files,connectors]=await Promise.all([hub.context(),hub.memory(),hub.list({limit:30}),connectorIds.length?readConnectors(connectorIds):Promise.resolve({selected:[]})]);
  const shared={context,memory,files,connectors};if(JSON.stringify(shared).length>30000)throw Error('Shared context exceeds 30,000 characters. Select fewer sources or shorten project notes.');
- const cache=new Map<string,Promise<unknown>>();const catalog=Object.fromEntries(readToolNames.map(n=>[n,toolHelp[n]]));
- const execute=(name:string,args:unknown)=>{const key=JSON.stringify([name,args]);if(!cache.has(key))cache.set(key,hub.execute(name,args));return cache.get(key)!;};
+ const cache=new Map<string,Promise<unknown>>();const catalog={...Object.fromEntries(readToolNames.map(n=>[n,toolHelp[n]])),list_specialists:specialistHelp.list_specialists,read_specialist_job:specialistHelp.read_specialist_job};
+ const execute=(name:string,args:unknown)=>{const key=JSON.stringify([name,args]);if(!cache.has(key))cache.set(key,name==='list_specialists'?(gatewayConfigured()?gateway({action:'list_specialists'}):listSpecialists()):name==='read_specialist_job'?(()=>{const {id}=z.object({id:z.string().uuid()}).strict().parse(args);return gatewayConfigured()?gateway({action:'read_specialist_job',id}):specialistJobs(id).then(jobs=>({jobs}));})():hub.execute(name,args));return cache.get(key)!;};
  return createOrchestrator(withSharedTools(complete,execute,catalog),shared)(request);
 }

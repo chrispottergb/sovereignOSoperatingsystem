@@ -1,4 +1,5 @@
 "use client";
+import {SpecialistPanel} from "./specialist-panel";
 import {CouncilBuild} from "./council-build";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
@@ -135,6 +136,7 @@ export function Workbench() {
           return <section key={turn.id} className="turn"><div className="prompt-label"><span className="you-badge">YOU</span><span>{new Date(turn.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>{turn.mode === "demo" && <span className="demo-label">DEMO · SAMPLE OUTPUTS</span>}</div><h2 className="user-prompt">{turn.prompt}</h2><div className="turn-toolbar"><span className="eyebrow">{turn.council ? "SYNTHESIS WORKSPACE" : `${Object.keys(turn.answers).length} PERSPECTIVES`}</span><span className="turn-number">{String(index + 1).padStart(2, "0")}</span></div>
             <WorkflowStatus turn={turn} busy={turnBusy} onStop={() => wb.stopCouncil(conversation.id, turn.id)} onRetry={reuse => void wb.startCouncil(conversation.id, turn.id, turn.council!.participants, turn.council!.lead, reuse)}/>
             {turn.synthesis && (!turn.council || turn.council.status === "complete") && <AnswerCard title={turn.council ? "SovereignOS" : undefined} provider={turn.synthesis.provider} answer={turn.synthesis} synthesis onCancel={() => turn.council ? wb.stopCouncil(conversation.id, turn.id) : wb.cancel(conversation.id, turn.id, turn.synthesis!.provider, true)} onRetry={() => turn.council ? void wb.startCouncil(conversation.id, turn.id, turn.council.participants, turn.council.lead, true) : void wb.run(conversation.id, turn.id, turn.synthesis!.provider, "synthesis")} retryDisabled={councilActive(turn) || Object.values(turn.answers).some(a => a?.status === "streaming")}/>}
+            {turn.synthesis?.status === "complete" && <SpecialistPanel turnId={turn.id} prompt={turn.prompt} live={turn.mode === "live"}/>}
             {turn.council?.status === "complete" && turn.synthesis && <CouncilBuild turn={turn} onQueued={id=>wb.mutate(w=>({...w,conversations:w.conversations.map(c=>c.id!==conversation.id?c:{...c,turns:c.turns.map(t=>t.id!==turn.id?t:{...t,buildJobId:id})})}))}/>}
             {!!Object.keys(turn.revisions||{}).length&&<details className="review-details"><summary>Corrected contributions</summary>{providerIds.map(id=>turn.revisions?.[id]&&<AnswerCard key={id} provider={id} answer={turn.revisions[id]} title={providers[id].name+" corrected contribution"}/>)}</details>}
             <details className="review-details"><summary>Process details · research and review</summary>
