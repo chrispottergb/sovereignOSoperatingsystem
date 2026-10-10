@@ -37,7 +37,7 @@ export const generateSchema = z.object({
   provider: providerSchema, mode: z.enum(["live", "demo"]), kind: z.enum(["response", "synthesis"]),
   prompt: z.string().trim().min(1).max(12000), history: z.array(messageSchema).max(24).default([]),
   context: contextSchema,
-  sharedEvidence: z.string().max(30000).optional(),
+  sharedEvidence: z.string().max(45000).optional(),
   revisions: z.array(sourceSchema).max(4).optional(),
   sources: z.array(sourceSchema).max(providerIds.length).optional(),
   reviewPhase: z.enum(["research", "routing", "critique", "vote", "arbitrate", "audit", "master", "execute", "resolve", "adjudicate", "refine"]).optional(),
@@ -78,7 +78,7 @@ export type StreamEvent =
   | { type: "done"; elapsedMs: number; finishReason: string }
   | { type: "error"; message: string; code: string; retryAfter?: number };
 export type ProviderConfig = { id: ProviderId; name: string; model: string; configured: boolean };
-export type AppConfig = { providers: ProviderConfig[]; demoEnabled: boolean; authRequired: boolean; authenticated: boolean; deploymentError?: string };
+export type AppConfig = { muse?: {configured:boolean;model:string;tier:string}; providers: ProviderConfig[]; demoEnabled: boolean; authRequired: boolean; authenticated: boolean; deploymentError?: string };
 
 export const answerSchema = z.object({
   provider: providerSchema, status: z.enum(["streaming", "complete", "error", "cancelled"]), text: z.string(),
@@ -89,7 +89,7 @@ export type Answer = z.infer<typeof answerSchema>;
 export const councilSchema = z.object({ protocol: z.literal("chat").optional(), status: z.enum(["researching", "routing", "answering", "reviewing", "voting", "planning", "arbitrating", "auditing", "awaiting_decision", "complete", "unresolved", "error", "cancelled"]), participants: z.array(providerSchema), lead: providerSchema, message: z.string().optional() });
 export const roundSchema = z.object({ number: z.number(), reviews: z.record(providerSchema, answerSchema), routing: answerSchema.optional(), candidate: candidateSchema.optional(), votes: z.record(providerSchema, answerSchema) });
 export const attemptSchema = z.object({ id: z.string(), provider: providerSchema, phase: z.string(), startedAt: z.number(), status: z.enum(["streaming", "complete", "error", "cancelled"]), model: z.string().optional(), usage: usageSchema.optional() });
-export const turnSchema = z.object({ buildJobId:z.string().optional(), sharedEvidence: z.string().max(30000).optional(), revisions: z.record(providerSchema, answerSchema).optional(), spendingMode: z.enum(["economy", "thorough"]).optional(), attempts: z.array(attemptSchema).optional(), id: z.string(), prompt: z.string(), createdAt: z.number(), mode: z.enum(["live", "demo"]), context: contextSchema, answers: z.record(providerSchema, answerSchema), synthesis: answerSchema.optional(), routing: answerSchema.optional(), assignments: routingSchema.optional(), engine: engineSchema.optional(), reviews: z.record(providerSchema, answerSchema).optional(), council: councilSchema.optional(), analytics: analyticsSchema.optional(), candidate: candidateSchema.optional(), votes: z.record(providerSchema, answerSchema).optional(), ballots: z.array(ballotSchema).optional(), rounds: z.array(roundSchema).optional(), lockedAt: z.number().optional(), botRuns: z.record(providerSchema, answerSchema).optional(), arbitration: answerSchema.optional(), audit: answerSchema.optional(), userDecision: decisionSchema.optional() });
+export const turnSchema = z.object({ useMuse:z.boolean().optional(), muse:z.object({provider:z.string(),model:z.string(),text:z.string().max(10000),usage:usageSchema,completedAt:z.number()}).optional(), buildJobId:z.string().optional(), sharedEvidence: z.string().max(30000).optional(), revisions: z.record(providerSchema, answerSchema).optional(), spendingMode: z.enum(["economy", "thorough"]).optional(), attempts: z.array(attemptSchema).optional(), id: z.string(), prompt: z.string(), createdAt: z.number(), mode: z.enum(["live", "demo"]), context: contextSchema, answers: z.record(providerSchema, answerSchema), synthesis: answerSchema.optional(), routing: answerSchema.optional(), assignments: routingSchema.optional(), engine: engineSchema.optional(), reviews: z.record(providerSchema, answerSchema).optional(), council: councilSchema.optional(), analytics: analyticsSchema.optional(), candidate: candidateSchema.optional(), votes: z.record(providerSchema, answerSchema).optional(), ballots: z.array(ballotSchema).optional(), rounds: z.array(roundSchema).optional(), lockedAt: z.number().optional(), botRuns: z.record(providerSchema, answerSchema).optional(), arbitration: answerSchema.optional(), audit: answerSchema.optional(), userDecision: decisionSchema.optional() });
 export type Turn = z.infer<typeof turnSchema>;
 export const conversationSchema = z.object({ id: z.string(), projectId: z.string(), title: z.string(), createdAt: z.number(), updatedAt: z.number(), turns: z.array(turnSchema) });
 export type Conversation = z.infer<typeof conversationSchema>;

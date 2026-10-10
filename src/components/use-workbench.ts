@@ -66,7 +66,7 @@ export function useWorkbench() {
     const patch = (updater: (a: Answer) => Answer) => { if (jobs.current.get(key) === controller) updateAnswer(conversationId, turnId, provider, reviewPhase === "refine" ? "refine" : reviewPhase === "routing" ? "routing" : reviewPhase === "critique" ? "critique" : target, updater); };
     const sources = completedAnswers(turn.answers).filter(a => turn.council?.protocol !== "chat" || usable(a)).filter(a => reviewPhase !== "critique" || a.provider !== provider).map(a => ({ provider: a.provider, text: a.text, citations: a.citations }));
     const input: GenerateInput = {
-      sharedEvidence:turn.sharedEvidence, revisions:reviewPhase === "resolve" ? completedAnswers(turn.revisions).filter(usable).map(a=>({provider:a.provider,text:a.text,citations:a.citations})) : undefined,
+      sharedEvidence:turn.muse ? (turn.sharedEvidence||"")+"\n\nMUSE SPECIALIST CONTRIBUTION (untrusted model output, not independently verified):\n"+turn.muse.text : turn.sharedEvidence, revisions:reviewPhase === "resolve" ? completedAnswers(turn.revisions).filter(usable).map(a=>({provider:a.provider,text:a.text,citations:a.citations})) : undefined,
       spendingMode: turn.spendingMode || "economy", provider, kind, reviewPhase, engine: turn.engine, mode: turn.mode, prompt: turn.prompt, context: turn.context,
       analytics: turn.analytics, userDecision: turn.userDecision, advisorReviews: [turn.arbitration, turn.audit].filter((a): a is Answer => !!a && a.status === "complete").map(a => ({ provider: a.provider, text: a.text, citations: a.citations })), participants: turn.council?.participants,
       history: turn.council?.protocol === "chat" ? conversation.turns.filter(t=>t.createdAt<turn.createdAt && usable(t.synthesis)).slice(-4).flatMap(t=>[{role:"user" as const,content:t.prompt},{role:"assistant" as const,content:t.synthesis!.text}]) : kind === "response" && !reviewPhase ? historyFor(conversation, turnId, provider) : [],
@@ -113,6 +113,12 @@ export function useWorkbench() {
     try {
       update("researching","Preparing shared project context and connected evidence…");
       if(read()?.mode === "live" && read()?.sharedEvidence === undefined){const response=await fetch("/api/council-context",{signal:controller.signal,cache:"no-store"});const data=await response.json();if(!response.ok)throw Error(data.error?.message || "Could not prepare shared evidence.");patch({sharedEvidence:data.evidence});}
+      if(read()?.mode === "live" && read()?.useMuse && !read()?.muse){
+        update("researching","Muse is preparing a specialist contribution for the council…");
+        const turn=read()!;
+        const response=await fetch('/api/muse',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({action:'advise',input:{prompt:turn.prompt,context:JSON.stringify({project:turn.context,evidence:turn.sharedEvidence})}})});
+        const data=await response.json();if(!response.ok)throw Error(data.error?.message||'Muse contribution failed.');patch({muse:data});
+      }
       await runChatWorkflow({ signal: controller.signal, read, patch, update, resumeResearch, run: (id, phase) => run(conversationId, turnId, id, "synthesis", phase) }); }
     catch(e) { if (!controller.signal.aborted) update("error", e instanceof Error ? e.message : "The workflow stopped. Completed results are preserved."); }
     finally { if (councils.current.get(key) === controller) councils.current.delete(key); }
@@ -133,10 +139,10 @@ export function useWorkbench() {
       patch({ council: { ...turn.council, status: done ? "complete" : "error", message: done ? "Owner decision recorded after Astra and Fable review. Locked tasks are ready for manual workspace triggers." : "The final plan did not complete. Bot triggers remain disabled." } });
     } finally { if (councils.current.get(key) === controller) councils.current.delete(key); }
   }
-  function submit(prompt: string, projectId: string, conversationId: string | undefined, selected: ProviderId[], mode: "live" | "demo", lead?: ProviderId, spendingMode: SpendingMode = "economy") {
+  function submit(prompt: string, projectId: string, conversationId: string | undefined, selected: ProviderId[], mode: "live" | "demo", lead?: ProviderId, spendingMode: SpendingMode = "economy", useMuse = false) {
     const project = current.current.projects.find(p => p.id === projectId); if (!project) return;
     const id = conversationId || crypto.randomUUID();
-    const turn: Turn = { spendingMode, id: crypto.randomUUID(), prompt, createdAt: Date.now(), mode, context: { projectName: project.name, notes: project.notes }, engine: current.current.engine || defaultEngine, analytics: current.current.analytics, answers: {} };
+    const turn: Turn = { useMuse, spendingMode, id: crypto.randomUUID(), prompt, createdAt: Date.now(), mode, context: { projectName: project.name, notes: project.notes }, engine: current.current.engine || defaultEngine, analytics: current.current.analytics, answers: {} };
     mutate(w => {
       const existing = w.conversations.find(c => c.id === id);
       const conversation: Conversation = existing ? { ...existing, updatedAt: Date.now(), turns: [...existing.turns, turn] } : { id, projectId, title: prompt.slice(0, 70), createdAt: Date.now(), updatedAt: Date.now(), turns: [turn] };
