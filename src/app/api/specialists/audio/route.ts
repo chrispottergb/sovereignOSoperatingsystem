@@ -1,5 +1,5 @@
 import {after} from 'next/server';
-import {reviewMusicOutput} from '@/lib/server/music-output';
+import {reviewMusicOutput,outputValidatorConfigured} from '@/lib/server/music-output';
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
 import {auth,constantEqual} from '@/lib/server/auth';
@@ -33,6 +33,6 @@ export async function POST(request:Request){try{
  const rows=await db<unknown[]>(`astra_specialist_jobs?${finishFilter}`,{method:'PATCH',body:JSON.stringify({status:'completed',stage:'Audio saved',artifact_path:artifactPath,artifact_sha256:sha,provenance:{adapter:'ace-step-api-v1',model:'acestep-v15-turbo',input_sha256:createHash('sha256').update(JSON.stringify(job.input)).digest('hex'),bytes:audio.length,inference_steps:8,requested_seed:job.input.seed,requested_bpm:job.input.bpm,requested_seconds:job.input.seconds,measurements:'Requested settings only; tempo, duration and neurological effects have not been measured.'}})});
  if(!rows.length)throw new AppError('LEASE_LOST','Job stopped during upload. Private artifact retained but not published as completed.',409);
  // Completed audio remains saved even if the independent validator is unavailable.
- if(job.input.evaluationId&&process.env.MUSIC_OUTPUT_VALIDATOR_URL&&process.env.MUSIC_OUTPUT_VALIDATOR_KEY){after(async()=>{try{await reviewMusicOutput(id);}catch{/* Review state records failures; no automatic retry or approval. */}});}
+ if(job.input.evaluationId&&outputValidatorConfigured()){after(async()=>{try{await reviewMusicOutput(id);}catch{/* Review state records failures; no automatic retry or approval. */}});}
  return Response.json({ok:true,sha256:sha});
 }catch(e){return errorResponse(e);}}

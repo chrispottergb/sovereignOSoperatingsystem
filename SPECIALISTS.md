@@ -162,3 +162,26 @@ version saved for that generation, even if the current protocol changes afterwar
 The common review service is reusable by future cloud generation adapters; this
 change does not enable cloud music generation or deploy a validator. Live accuracy
 and agreement with the intended QLL method require testing the chosen analyzer.
+
+### Built-in OpenAI audio validator
+
+When no custom validator URL/key is set, the app now reuses `OPENAI_API_KEY` with
+`gpt-audio-1.5` on Chat Completions. It sends actual MP3 input and asks for text-only
+findings, with `store: false`, a 6,000-token output cap, one request per track and no
+automatic retries. No separate hosting or new provider credential is needed. The
+model's identity is saved from the API response. Malformed or truncated responses
+fail closed. This is a listening-based model evaluation, not calibrated DSP or EEG
+measurement: exact acoustic and physiological claims must remain unverified unless
+a custom measurement-capable validator is connected. Model access/billing must be
+available on the existing OpenAI account.
+
+Official API contract checked against:
+https://developers.openai.com/api/docs/guides/audio-chat-completions
+https://developers.openai.com/api/docs/models/gpt-audio-1.5
+
+Deployment receipt: on 2026-10-09, migrations 202610090002, 202610090003 and
+202610090004 were applied together in a transaction to the existing `ai sovereignos`
+project through the authenticated Supabase CLI Management API. The database had no
+`supabase_migrations.schema_migrations` history table; earlier app tables already
+existed. Do not blindly push every historical migration to this project. The new
+private `specialist-assets` bucket was verified with a 3 MB limit.
