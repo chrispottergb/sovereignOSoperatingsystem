@@ -32,3 +32,8 @@ test('approved music library shows a 90 percent output and keeps lower scores in
  await page.route('**/api/music-studio',r=>r.fulfill({json:{configured:true,config:defaultStudioConfig,runs:[],providers:[],specialists:{},jobs:[],validatorConfigured:true,reviews:[review,{...review,job_id:'held-track',status:'below_threshold',score:80}],library:[{review,job:{id:'approved-track',input:{prompt:'Approved music fixture'},status:'completed'}}]}}));
  await page.goto('/music');await expect(page.getByRole('heading',{name:'Music library · 90%+'})).toBeVisible();await expect(page.getByText('90% QLL match · Audio validator')).toBeVisible();await expect(page.getByRole('link',{name:'Download approved track'})).toHaveCount(1);await expect(page.getByText('80% QLL match')).toHaveCount(0);
 });
+
+test('imports a Word protocol into the editable field without auto-saving',async({page})=>{
+ await page.route('**/api/music-studio',r=>r.fulfill({json:{configured:true,config:defaultStudioConfig,runs:[],providers:[],specialists:{},jobs:[]}}));
+ await page.goto('/music');await page.getByLabel('Import protocol (.docx, .txt or .md)',{exact:true}).setInputFiles('tests/fixtures/protocol.docx');await expect(page.getByLabel('Authoritative QLL protocol',{exact:true})).toHaveValue('QLL test protocol\n\nPreserve the requested words.');await expect(page.getByText('Protocol imported. Review the extracted text, then save your settings.')).toBeVisible();
+});

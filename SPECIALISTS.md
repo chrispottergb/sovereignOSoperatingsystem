@@ -185,3 +185,16 @@ project through the authenticated Supabase CLI Management API. The database had 
 `supabase_migrations.schema_migrations` history table; earlier app tables already
 existed. Do not blindly push every historical migration to this project. The new
 private `specialist-assets` bucket was verified with a 3 MB limit.
+
+### Word protocol import
+
+Music Studio accepts `.docx`, `.txt` and `.md` files up to 2 MB. Word text is
+extracted locally in the browser with Mammoth 1.13.0 and placed in the editable
+protocol field; import does not save or invoke a model. Review the text before
+saving. Formatting and images are not part of the extracted protocol. Empty,
+corrupt, encrypted, and over-20,000-character content is rejected without replacing
+the existing text. Legacy `.doc` files require Word Save As `.docx` first.
+
+The parser's optional CLI dependencies produce a moderate npm advisory via
+argparse/sprintf-js; this app imports the standalone browser bundle and does not
+execute Mammoth's CLI. No parser runs on the server or renders document HTML.
