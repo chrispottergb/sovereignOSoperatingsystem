@@ -1,0 +1,2 @@
+# Fixture decisions
+Atlas and Cedar require all listed export formats and capacity for all listed records. Beacon only requires its listed platform and export. When more than one engine qualifies, choose the lowest monthly cost. All projects use the workflow in workflow.json. Tool follow-ups are generation calls; individual read tools are not generation calls. These are synthetic test fixtures, not product recommendations or pricing claims.

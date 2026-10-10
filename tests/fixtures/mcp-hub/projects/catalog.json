@@ -1,0 +1,1 @@
+{"projects":[{"id":"atlas","budget":30,"platforms":["Windows","iPhone"],"records":1200,"must_export":["json","csv"]},{"id":"beacon","budget":12,"platforms":["Android"],"records":500,"must_export":["json"]},{"id":"cedar","budget":8,"platforms":["Windows"],"records":3000,"must_export":["csv"]}]}

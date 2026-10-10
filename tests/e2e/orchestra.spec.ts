@@ -1,0 +1,5 @@
+import {test,expect} from "@playwright/test";
+test("one chat offers explicit coding-engine selection and a backend role preview",async({page})=>{
+ await page.route("**/api/orchestra",async route=>{if(route.request().method()==="GET")return route.fulfill({json:{runs:[],connectors:[],cloudBuildsReady:false}});const body=route.request().postDataJSON();expect(body.action).toBe("preview");expect(body.input.builder).toBe("claude-code");await route.fulfill({json:{intent:"build",steps:[{id:"build",title:"Build with Claude Code"},{id:"review",title:"Independent implementation review"}]}});});
+ await page.goto("/orchestra");await page.getByLabel("Your request").fill("Build a scheduling app");await page.getByLabel("Build with",{exact:true}).selectOption("claude-code");await page.getByRole("button",{name:"Preview roles & steps"}).click();await expect(page.getByText("Build with Claude Code",{exact:true})).toBeVisible();await expect(page.getByText("Independent implementation review",{exact:true})).toBeVisible();await expect(page.getByText("Cloud build engine: disabled · Local runner: offline",{exact:true})).toBeVisible();
+});

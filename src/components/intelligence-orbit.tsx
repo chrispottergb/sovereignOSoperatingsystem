@@ -1,0 +1,3 @@
+export function IntelligenceOrbit() {
+ return <div className="intelligence-orbit" aria-hidden="true"><div className="intelligence-halo"/><div className="intelligence-ring ring-a"/><div className="intelligence-ring ring-b"/><div className="intelligence-ring ring-c"/><div className="intelligence-center"><span>✦</span></div><span className="intelligence-point point-a">◎</span><span className="intelligence-point point-b">✳</span><span className="intelligence-point point-c">⌘</span><span className="intelligence-point point-d">𝕏</span><span className="intelligence-caption">INDEPENDENT MINDS. SHARED DIRECTION.</span></div>;
+}

@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+.env*
+!.env.example
+test-results
+playwright-report
+coverage
+*.log
+*.tsbuildinfo
+shared-context.json
+mcp-workspace

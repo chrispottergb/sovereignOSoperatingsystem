@@ -1,0 +1,42 @@
+{
+  "name": "sovereign-os",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1",
+    "build": "next build",
+    "start": "next start --hostname 127.0.0.1",
+    "start:public": "next start --hostname 0.0.0.0",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "mcp": "node scripts/start-mcp.mjs",
+    "runner:local": "node scripts/start-mcp.mjs --runner"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "latest",
+    "lucide-react": "latest",
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "react-markdown": "latest",
+    "remark-gfm": "latest",
+    "server-only": "latest",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "eslint": "^9",
+    "eslint-config-next": "latest",
+    "tsx": "latest",
+    "typescript": "^5",
+    "vitest": "latest"
+  }
+}

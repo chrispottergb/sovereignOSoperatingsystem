@@ -1,0 +1,29 @@
+import {afterEach,beforeEach,describe,it,expect,vi} from 'vitest';
+import {mkdtemp,writeFile,mkdir,rm,symlink} from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import {SharedHub} from '../src/lib/tools/shared-hub';
+import {withSharedTools} from '../src/lib/tools/model-tools';
+import {buildProject,builderArgs,childEnvironment,type BuildInput} from '../src/lib/tools/local-build';
+import {providerIds} from '../src/lib/contracts';
+let root:string,hub:SharedHub;
+beforeEach(async()=>{root=await mkdtemp(path.join(os.tmpdir(),'sovereign-hub-test-'));hub=new SharedHub(root,async()=>({projectName:'Test',notes:'Shared goal'}));});
+afterEach(async()=>{vi.unstubAllEnvs();if(path.dirname(root)===os.tmpdir()&&path.basename(root).startsWith('sovereign-hub-test-'))await rm(root,{recursive:true,force:true});});
+describe('shared hub boundaries',()=>{
+ it('reads bounded file ranges and hides credential filenames',async()=>{await writeFile(path.join(root,'brief.md'),'abcdef');await writeFile(path.join(root,'.env'),'not-shared');await writeFile(path.join(root,'credentials.json'),'not-shared');const list=await hub.list({});expect(list.files.map(f=>f.path)).toEqual(['brief.md']);expect(await hub.read({path:'brief.md',limit:3})).toMatchObject({text:'abc',next_offset:3});});
+ it('rejects traversal, absolute paths, alternate streams and hidden files',async()=>{for(const file of ['../outside.txt','C:/outside.txt','brief.md:stream','.env','a\\b.txt','dir/.hidden.txt'])await expect(hub.read({path:file})).rejects.toThrow();});
+ it('rejects linked files',async()=>{await writeFile(path.join(root,'target.txt'),'content');try{await symlink(path.join(root,'target.txt'),path.join(root,'linked.txt'));}catch(e){if((e as NodeJS.ErrnoException).code==='EPERM')return;throw e;}await expect(hub.read({path:'linked.txt'})).rejects.toThrow('Linked');});
+ it('saves notes and artifacts without overwriting, and refuses executable artifacts',async()=>{const a=await hub.save('memory',{title:'Decision',text:'Use SQLite'}),b=await hub.save('memory',{title:'Decision',text:'Use Postgres'});expect(a.path).not.toBe(b.path);expect((await hub.memory()).notes).toHaveLength(2);await expect(hub.save('artifacts',{name:'run.exe',text:'bad'})).rejects.toThrow('supported');});
+});
+describe('same tool adapter for all four providers',()=>{
+ it.each(providerIds)('%s reads a shared tool then answers, preserving both calls',async provider=>{const prompts:string[]=[];const complete=vi.fn(async(_p:string,prompt:string)=>{prompts.push(prompt);return {model:provider,response:prompts.length===1?'{"shared_tool_calls":[{"name":"read_project_context","arguments":{}}]}':'SCOPE: Explain\nAnswer',tokens:{inputTokens:5,outputTokens:3}};});const tools=withSharedTools(complete,async()=>({notes:'shared evidence'}),{read_project_context:'Read context'});const result=await tools(provider,'ORIGINAL TASK','answer');expect(prompts).toHaveLength(2);expect(prompts[1]).toContain('shared evidence');expect(result.tokens.inputTokens).toBe(10);expect(result.provider_calls).toHaveLength(2);expect(result.tool_calls).toHaveLength(1);});
+ it('does not execute unknown or write tools',async()=>{const execute=vi.fn();const tools=withSharedTools(async()=>({model:'x',response:'{"shared_tool_calls":[{"name":"send_message","arguments":{}}]}',tokens:{}}),execute,{});await expect(tools('grok','task','answer')).rejects.toThrow('not available');expect(execute).not.toHaveBeenCalled();});
+ it('does not execute a second round or silently loop',async()=>{const execute=vi.fn(async()=>({ok:true}));const tools=withSharedTools(async()=>({model:'x',response:'{"shared_tool_calls":[{"name":"read","arguments":{}}]}',tokens:{}}),execute,{read:'read'});await expect(tools('claude','task','answer')).rejects.toThrow('round limit');expect(execute).toHaveBeenCalledTimes(1);});
+});
+describe('selected local coding engine',()=>{
+ const input:BuildInput={task:'Build a text utility',builder:'claude-code',environment:'local',files:[],minutes:1,claude_budget_usd:1};
+ it('rejects Cloud before discovery, execution or file operations',async()=>{const execute=vi.fn(),find=vi.fn();await expect(buildProject({...input,environment:'cloud'},hub,new AbortController().signal,execute,find)).rejects.toThrow('disabled by the owner');expect(find).not.toHaveBeenCalled();expect(execute).not.toHaveBeenCalled();});
+ it('uses restricted Claude tools and a sandboxed Codex command',()=>{expect(builderArgs(input,'report')).toContain('--restricted');const args=builderArgs({...input,builder:'codex'},'report');expect(args).toContain('workspace-write');expect(args).toContain('--ignore-user-config');expect(args.join(' ')).not.toContain('bypass');});
+ it('excludes unrelated credentials from child environment',()=>{vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY','private-db');vi.stubEnv('WORKER_SECRET','private-worker');vi.stubEnv('ANTHROPIC_API_KEY','claude-test');vi.stubEnv('OPENAI_API_KEY','openai-test');const env=childEnvironment('claude-code');expect(env.ANTHROPIC_API_KEY).toBe('claude-test');expect(env.OPENAI_API_KEY).toBeUndefined();expect(env.SUPABASE_SERVICE_ROLE_KEY).toBeUndefined();expect(env.WORKER_SECRET).toBeUndefined();});
+ it('records a real process result without claiming tests were verified',async()=>{await writeFile(path.join(root,'source.ts'),'export const n=1');const execute=vi.fn(async(_exe:string,_args:string[],cwd:string)=>{await mkdir(path.join(cwd,'src'));await writeFile(path.join(cwd,'src','index.ts'),'export const answer=42');return {code:0,stdout:JSON.stringify({subtype:'success',is_error:false,result:'Added index.ts. Shell tests not run.'})};});const result=await buildProject({...input,files:['source.ts']},hub,new AbortController().signal,execute,async()=>'/test/claude');expect(result.environment).toBe('local');expect(result.checks_verified_by_hub).toBe(false);expect(execute).toHaveBeenCalledTimes(1);expect(result.report).toContain('not run');});
+});
