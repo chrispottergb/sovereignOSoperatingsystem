@@ -88,3 +88,35 @@ the council-to-music handoff and audio link. These do not validate actual model 
 GPU speed, a live database migration, or a real ACE-Step generation.
 
 Official API reference: https://github.com/ace-step/ACE-Step-1.5/blob/main/docs/en/API.md
+
+## Music Studio: three-model review
+
+Open **Music Studio** from the main sidebar (`/music`). Genre, delivery, vocal tone,
+singing style, rap style and desired-outcome pills accept custom options. Frequently
+used choices sort first in that browser. Key, tempo, duration, seed and lyrics are
+saved with the brief.
+
+Apply `supabase/migrations/202610090003_music_studio.sql` after migration 002 to
+persist settings and reviews. Save the actual authoritative QLL text and its version;
+no substitute QLL protocol is bundled. Select three distinct configured providers:
+Claude evaluator, Grok challenger and OpenAI validator are editable defaults, not
+claims of comparative model quality. Existing server-side provider credentials are reused.
+
+The explicit stages are evaluator -> challenger -> validator -> generation. Each
+review stage makes one model request with bounded output and no automatic retry.
+The challenger supplies a complete revised prompt. Only that revision can be sent
+to generation after validation passes. Protocol and settings revisions invalidate
+older approvals; each run preserves its brief, protocol snapshot, hash and usage.
+A request UUID prevents duplicate evaluation charges on recovery. Interrupted
+reviews may remain pending and are never automatically repeated. Starting a new
+evaluation is an explicit action that may incur another charge.
+
+The model library accepts Hugging Face model references for prompt preparation.
+Adding a model does not install it or provide an execution adapter. ACE-Step remains
+the only implemented music adapter, using the local worker described above. Cloud
+hosting is still disabled. QLL review validates written instructions, not acoustic
+properties or neurological effects of generated audio.
+
+Tests use synthetic protocol text and mocked providers, database and generation
+responses. Desktop and mobile browser tests exercise all three review stages and
+model registration; they do not demonstrate a live QLL review or GPU generation.

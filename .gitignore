@@ -16,3 +16,4 @@ mcp-workspace/
 
 supabase/.temp/
 supabase/.branches/
+.test-temp/

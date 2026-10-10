@@ -7,7 +7,7 @@ export function aceOrigin(raw:string){
  if(!['127.0.0.1','[::1]'].includes(u.hostname)||!['http:','https:'].includes(u.protocol)||u.username||u.password||u.pathname!=='/'||u.search||u.hash)throw Error('ACE-Step must use an exact loopback origin. Cloud execution is disabled.');
  return u.origin;
 }
-export function acePayload(input:MusicInput){return {model:'acestep-v15-turbo',prompt:input.prompt,lyrics:input.lyrics||'[Instrumental]',audio_duration:input.seconds,bpm:input.bpm,seed:input.seed,use_random_seed:false,batch_size:1,inference_steps:8,audio_format:'mp3',thinking:false,use_format:false,use_cot_caption:false,use_cot_language:false};}
+export function acePayload(input:MusicInput){return {model:'acestep-v15-turbo',prompt:input.prompt,lyrics:input.lyrics||'[Instrumental]',audio_duration:input.seconds,bpm:input.bpm,key_scale:input.keyScale||'',seed:input.seed,use_random_seed:false,batch_size:1,inference_steps:8,audio_format:'mp3',thinking:false,use_format:false,use_cot_caption:false,use_cot_language:false};}
 async function boundedBody(r:Response,max:number){const reader=r.body?.getReader();if(!reader)throw Error('Empty ACE-Step response.');const chunks:Uint8Array[]=[];let size=0;try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>max){await reader.cancel();throw Error('ACE-Step response exceeds the configured size limit.');}chunks.push(value);}}finally{reader.releaseLock();}return Buffer.concat(chunks);}
 export class AceStep {
  readonly origin:string;

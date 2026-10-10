@@ -13,6 +13,8 @@ export const specialistRegistry = [
 export const musicShape = {
  requestId:z.string().uuid(),
  sourceTurnId:z.string().uuid().optional(),
+ evaluationId:z.string().uuid().optional(),
+ keyScale:z.string().trim().max(30).optional(),
  prompt:z.string().trim().min(3).max(4000),
  lyrics:z.string().max(4000).default(''),
  seconds:z.number().int().min(10).max(120).default(30),
