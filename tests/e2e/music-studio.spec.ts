@@ -16,7 +16,7 @@ test('dedicated studio collects choices, runs three roles and gates music on val
  await expect(page.getByRole('button',{name:'Create model prompt with QLL'})).toBeDisabled();
  await page.getByLabel('Your idea',{exact:true}).fill('Make a gentle piano track');await page.getByRole('button',{name:'Lo-fi',exact:true}).click();await page.getByLabel('Musical key').selectOption('A Minor');
  await expect(page.getByRole('button',{name:'Lo-fi',exact:true})).toHaveAttribute('aria-pressed','true');
- await page.getByLabel('Version',{exact:true}).fill('test-v1');await page.getByLabel('Authoritative QLL protocol',{exact:true}).fill('Test-only protocol: preserve requested wording.');await page.getByRole('button',{name:'Save evaluator & model settings'}).click();
+ await page.getByLabel('Version',{exact:true}).fill('test-v1');await page.getByLabel('Authoritative QLL protocol',{exact:true}).fill('Test-only protocol: preserve requested wording.');await page.getByLabel('QLL output checklist (one requirement per line)',{exact:true}).fill('Preserve requested wording');await page.getByRole('button',{name:'Save evaluator & model settings'}).click();
  await page.getByRole('button',{name:'Create model prompt with QLL'}).click();await expect(page.getByRole('button',{name:'Generate validated music'})).toHaveCount(0);
  await page.getByRole('button',{name:'Challenge and refine this prompt'}).click();await page.getByRole('button',{name:'Send to independent validator'}).click();await expect(page.getByRole('heading',{name:'Brief validation passed'})).toBeVisible();
  await page.getByRole('button',{name:'Generate validated music'}).click();expect(actions).toEqual(['save','evaluate','challenge','validate','generate']);
@@ -25,4 +25,10 @@ test('dedicated studio collects choices, runs three roles and gates music on val
 test('allows model registration without falsely advertising an execution adapter',async({page})=>{
  await page.route('**/api/music-studio',r=>r.fulfill({json:{configured:true,config:defaultStudioConfig,revision:null,runs:[],setup:null,providers:[],specialists:{configured:true,enabled:false,runnerOnline:false},jobs:[]}}));
  await page.goto('/music');await page.getByLabel('Model display name',{exact:true}).fill('My experimental music model');await page.getByLabel('Hugging Face model reference',{exact:true}).fill('example/music-model');await page.getByRole('button',{name:'Add model to library'}).click();await expect(page.getByText('Registered · adapter needed',{exact:true})).toBeVisible();await expect(page.getByRole('option',{name:'My experimental music model · prompt preparation only'})).toHaveCount(1);
+});
+
+test('approved music library shows a 90 percent output and keeps lower scores in review',async({page})=>{
+ const review={job_id:'approved-track',status:'approved',score:90,artifact_sha256:'a'.repeat(64),protocol_sha256:'b'.repeat(64),rubric_sha256:'c'.repeat(64),created_at:'2026-10-09',report:{validator:'Audio validator',summary:'Nine of ten requirements met'}};
+ await page.route('**/api/music-studio',r=>r.fulfill({json:{configured:true,config:defaultStudioConfig,runs:[],providers:[],specialists:{},jobs:[],validatorConfigured:true,reviews:[review,{...review,job_id:'held-track',status:'below_threshold',score:80}],library:[{review,job:{id:'approved-track',input:{prompt:'Approved music fixture'},status:'completed'}}]}}));
+ await page.goto('/music');await expect(page.getByRole('heading',{name:'Music library · 90%+'})).toBeVisible();await expect(page.getByText('90% QLL match · Audio validator')).toBeVisible();await expect(page.getByRole('link',{name:'Download approved track'})).toHaveCount(1);await expect(page.getByText('80% QLL match')).toHaveCount(0);
 });

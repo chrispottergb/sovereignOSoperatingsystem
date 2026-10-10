@@ -7,7 +7,7 @@ vi.mock('../src/lib/server/specialists',()=>({queueMusic:mocks.queue,listSpecial
 import {evaluateMusic,challengeMusic,validateMusic,generateValidatedMusic} from '../src/lib/server/music-studio';
 import {POST} from '../src/app/api/music-studio/route';
 const id='12345678-1234-4234-9234-123456789abc';
-const config={...defaultStudioConfig,protocolVersion:'test-v1',protocolText:'Test fixture: preserve user wording. No scientific efficacy claim.'};
+const config={...defaultStudioConfig,qllRequirements:['Preserve wording'],protocolVersion:'test-v1',protocolText:'Test fixture: preserve user wording. No scientific efficacy claim.'};
 const brief={...blankBrief,idea:'Create a warm sung melody',key:'A Minor',delivery:['Sung']};
 const evaluation={prompt:'Warm sung melody in A Minor',lyrics:'',rationale:'Matches selected tone',protocolChecks:[{requirement:'Preserve wording',implementation:'No supplied lyrics changed'}],limitations:['No measured effects']};
 const challenge={assessment:'A clear instruction',issues:[],revision:{...evaluation,prompt:'Revised warm melody in A Minor'}};

@@ -120,3 +120,45 @@ properties or neurological effects of generated audio.
 Tests use synthetic protocol text and mocked providers, database and generation
 responses. Desktop and mobile browser tests exercise all three review stages and
 model registration; they do not demonstrate a live QLL review or GPU generation.
+
+## Post-generation QLL approval and the music library
+
+Apply `supabase/migrations/202610090004_music_output_reviews.sql` after 003. Before
+starting a new evaluation, save the authoritative QLL protocol, its version and a
+complete output checklist (one unique requirement per line, up to 40). The owner
+must ensure this checklist covers the intended QLL method; the app does not invent
+the method or guarantee completeness. All requirements have equal weight and are
+frozen with the original brief. Changes apply to new briefs, never retroactively.
+
+The approved Music Library includes a track at **90% or higher**, including exactly
+90%. Score = met requirements / all saved requirements * 100. Missing or unverified
+requirements cannot count as met; duplicate or omitted IDs invalidate the report.
+Structure and continuity must also be verified. This is rubric compliance, not a
+probability of neurological efficacy or a scientific effectiveness score.
+
+An independent audio-capable validation service is required. No such service is
+provisioned by this change. Configure server-side `MUSIC_OUTPUT_VALIDATOR_URL`
+(an HTTPS endpoint without query parameters) and `MUSIC_OUTPUT_VALIDATOR_KEY`.
+The endpoint receives POST JSON contract `sovereign-music-output-v1`: actual private
+MP3 bytes in base64, their SHA-256, original input, frozen QLL text/version, and the
+numbered checklist. It must analyze the actual audio, with transcription and signal
+analysis where needed. The full response contract is in `src/lib/music-output.ts`;
+return every requirement with met/unmet/unverified and supporting evidence, plus
+structural and continuity findings and the analyzer identity/version. The service
+must treat reference text as data and return unverified for unsupported measurements.
+Existing text-only council calls do not substitute for this service.
+
+Configured validation starts after the completed audio upload response using Next's
+`after` lifecycle; upload confirmation does not wait for audio analysis. If the
+service is configured later, use **Validate actual audio against QLL** on a completed
+review copy. A unique job reservation prevents duplicate paid reviews. Requests have
+a 180-second timeout, bounded responses and no redirects or automatic retries.
+An interrupted review may remain running; it never grants library admission.
+
+Only approved reports matching the saved artifact hash are listed in the library.
+Below-threshold, failed and unverifiable tracks remain accessible as review copies.
+Playback and download of a review copy do not imply approval. Reports use the QLL
+version saved for that generation, even if the current protocol changes afterward.
+The common review service is reusable by future cloud generation adapters; this
+change does not enable cloud music generation or deploy a validator. Live accuracy
+and agreement with the intended QLL method require testing the chosen analyzer.
