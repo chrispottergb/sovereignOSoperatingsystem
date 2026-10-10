@@ -1,3 +1,4 @@
+import {musicValidationMessage} from '@/lib/music-studio';
 import {reviewMusicOutput,musicOutputState} from '@/lib/server/music-output';
 import {z} from 'zod';
 import {auth,assertSameOrigin,readJsonLimited} from '@/lib/server/auth';
@@ -24,4 +25,4 @@ export async function POST(request:Request){try{assertSameOrigin(request);const 
  if(v.action==='validate')return Response.json(await validateMusic(v.id,request.signal));
  if(v.action==='challenge')return Response.json(await challengeMusic(v.id,request.signal));
  return Response.json(await generateValidatedMusic(v.id));
-}catch(e){if(e instanceof z.ZodError)return errorResponse(new AppError('VALIDATION','Check the creative brief and its limits.',400));return errorResponse(e);}}
+}catch(e){if(e instanceof z.ZodError)return errorResponse(new AppError('VALIDATION',musicValidationMessage(e),400));return errorResponse(e);}}

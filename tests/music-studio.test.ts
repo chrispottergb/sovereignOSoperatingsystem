@@ -1,5 +1,5 @@
 import {it,expect,vi,afterEach} from 'vitest';
-import {sameStudioSettings,defaultStudioConfig,blankBrief,studioConfig,validationOutput,musicBrief,evaluatorPrompt,type StudioRun} from '../src/lib/music-studio';
+import {musicValidationMessage,sameStudioSettings,defaultStudioConfig,blankBrief,studioConfig,validationOutput,musicBrief,evaluatorPrompt,type StudioRun} from '../src/lib/music-studio';
 const mocks=vi.hoisted(()=>({db:vi.fn(),complete:vi.fn(),queue:vi.fn()}));
 vi.mock('../src/lib/server/astra-store',()=>({db:mocks.db,storageReady:()=>true}));
 vi.mock('../src/lib/server/model-completion',()=>({completion:()=>mocks.complete}));
@@ -31,3 +31,5 @@ it('registration alone never authorizes arbitrary model execution',async()=>{moc
 it('rejects cross-origin studio settings changes',async()=>{vi.stubEnv('APP_PASSWORD','');vi.stubEnv('APP_LOCAL_ONLY','true');vi.stubEnv('APP_ORIGIN','http://127.0.0.1:3100');const r=await POST(new Request('http://127.0.0.1:3100/api/music-studio',{method:'POST',headers:{Origin:'https://other.test','Content-Type':'application/json'},body:JSON.stringify({action:'save',config})}));expect(r.status).toBe(403);expect(mocks.db).not.toHaveBeenCalled();});
 
 it("recognizes database key reordering as the same saved settings",()=>{const reordered=JSON.parse(JSON.stringify(config),(k,v)=>v&&typeof v==="object"&&!Array.isArray(v)?Object.fromEntries(Object.entries(v).reverse()):v);expect(sameStudioSettings(config,reordered)).toBe(true);expect(sameStudioSettings(config,{...config,protocolVersion:"changed"})).toBe(false);});
+
+it('identifies invalid numeric fields without echoing user content',()=>{const result=musicBrief.safeParse({...brief,seconds:180,bpm:0,seed:-1});expect(result.success).toBe(false);if(!result.success){const message=musicValidationMessage(result.error);expect(message).toContain('10 to 120 seconds');expect(message).toContain('30 to 300 BPM');expect(message).toContain('Seed');expect(message).not.toContain(brief.idea);}});
