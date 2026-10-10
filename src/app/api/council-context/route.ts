@@ -9,7 +9,7 @@ import {limiter} from '@/lib/server/limits';
 export async function GET(request:Request){try{
  const owner=await auth.resolve(request);limiter.take('council-context:'+owner.id,20,60000);
  if(!storageReady())return Response.json({evidence:JSON.stringify({status:'Connector storage is not configured.'})});
- const connectors=await db<{id:string}[]>('astra_connectors?enabled=eq.true&permissions=cs.%7Bread%7D&select=id&order=id&limit=21');
+ const connectors=await db<{id:string}[]>('astra_connectors?enabled=eq.true&permissions=cs.%5B%22read%22%5D&select=id&order=id&limit=21');
  if(connectors.length>20)throw new AppError('CONTEXT_BUDGET','More than 20 connectors are enabled. Select the needed connections in the hub.',413);
  const specialists=await listSpecialists();
  const artifacts=specialists.configured?(await specialistJobs()).filter(j=>j.status==='completed').slice(0,5).map(j=>({id:j.id,operation:'generate_music',sha256:j.artifact_sha256,settings:{seconds:j.input.seconds,bpm:j.input.bpm,seed:j.input.seed},sourceTurnId:j.input.sourceTurnId})):[];
