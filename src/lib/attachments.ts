@@ -7,3 +7,6 @@ export const attachmentBriefSchema=z.object({files:z.array(attachmentSchema).max
 export type AttachmentBrief=z.infer<typeof attachmentBriefSchema>;
 export function attachmentMime(name:string){const extension=name.toLowerCase().split('.').pop()||'';return attachmentTypes[extension as keyof typeof attachmentTypes];}
 export function isTextAttachment(mime:string){return mime.startsWith('text/')||mime==='application/json'||mime===attachmentTypes.docx;}
+
+export const maxAttachmentTextChars=250_000;
+export const maxCombinedTextChars=400_000;

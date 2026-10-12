@@ -1,4 +1,4 @@
-export async function importProtocol(file:Pick<File,'name'|'size'|'arrayBuffer'|'text'>){
+export async function importProtocol(file:Pick<File,'name'|'size'|'arrayBuffer'|'text'>,maxChars=20000){
  const extension=file.name.toLowerCase().split('.').pop();
  if(extension==='doc')throw Error('For older .doc files, use Save As in Word to create a .docx file, then import it.');
  if(!['docx','txt','md'].includes(extension||''))throw Error('Choose a Word .docx, .txt or .md file.');
@@ -10,6 +10,6 @@ export async function importProtocol(file:Pick<File,'name'|'size'|'arrayBuffer'|
  }else{text=await file.text();}
  text=text.replace(/^\uFEFF/,'').trim();
  if(!text)throw Error('The document has no readable text. Image-only documents need text recognition first.');
- if(text.length>20000)throw Error('The protocol exceeds 20,000 characters. Import a shorter version; no text has been replaced.');
+ if(text.length>maxChars)throw Error(`The document has ${text.length.toLocaleString()} characters; the limit is ${maxChars.toLocaleString()}. No text has been truncated.`);
  return text;
 }

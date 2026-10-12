@@ -1,6 +1,6 @@
 # Prompt attachments
 
-Main chat, Muse and Music Studio accept files using the shared attachment tray (picker or drag/drop). Up to four files, 25 MB each, 60 MB combined. Supported: PNG, JPG/JPEG, WebP, MP3, WAV, MP4, MOV, WebM, PDF, DOCX, TXT, MD, CSV and JSON. Word/text files are limited to 2 MB and 20,000 extracted characters per file; text-only combined context is limited to 15,000 characters. Larger text is rejected rather than silently truncated. DOCX imports text only using the existing local parser.
+Main chat, Muse and Music Studio accept files using the shared attachment tray (picker or drag/drop). Up to four files, 25 MB each, 60 MB combined. Supported: PNG, JPG/JPEG, WebP, MP3, WAV, MP4, MOV, WebM, PDF, DOCX, TXT, MD, CSV and JSON. Word/text files are limited to 2 MB and 250,000 extracted characters per file and 400,000 combined. Text up to 15,000 combined characters is passed directly; longer text is sent in full to one Meta source-brief call. Original files remain intact. Oversized text is rejected rather than silently truncated. DOCX imports text only using the existing local parser.
 
 ## Storage and access
 
@@ -10,7 +10,7 @@ Downloads require workspace authentication and issue a 15-minute signed URL. Met
 
 ## Model routing and provenance
 
-Text-only attachments use extracted text without a model call. Media uses Meta Responses once per prompt, with Muse Spark 1.3 for image/PDF and 1.2 when audio/video is present. The reader produces a labelled source interpretation, not a claim that every council model independently inspected raw media. Other models receive that interpretation in shared evidence throughout research, review, revision and final synthesis. Main-chat turns retain file IDs, names, source brief and reported usage. Muse history retains the source brief and original-file links. Music briefs preserve the same source evidence through evaluator/challenger/validator steps.
+Short text-only attachments use extracted text without a model call. Longer documents use one paid Meta summarization call. Media uses Meta Responses once per prompt, with Muse Spark 1.3 for image/PDF and 1.2 when audio/video is present. The reader produces a labelled source interpretation, not a claim that every council model independently inspected raw media. Other models receive that interpretation in shared evidence throughout research, review, revision and final synthesis. Main-chat turns retain file IDs, names, source brief and reported usage. Muse history retains the source brief and original-file links. Music briefs preserve the same source evidence through evaluator/challenger/validator steps.
 
 Completed readings are reused for an unchanged prompt and file selection while the page remains open. Provider failure or incomplete output stops downstream generation, without automatic retries. Attachment metadata and briefs are schema-validated on history restore.
 
@@ -29,3 +29,5 @@ Music references inform prompt preparation. They are not automatically audio-to-
 
 Final production deployment: dpl_AQPxzT32NGCGVmYzsE7YUmkpFoLY (READY). Corrected audio reader returned the synthetic spoken phrase as a transcript candidate (HTTP 200, Muse Spark 1.2). Live /muse returned 200 with the Attach files control and exact private-storage origin in CSP. No provider key values were printed.
 
+
+Long-document fix: 187 unit tests passed; desktop/mobile upload of a 32,000+ character document passed. Empty-text and oversized-text errors are now distinct. The dedicated QLL protocol editor retains its own 20,000-character limit.

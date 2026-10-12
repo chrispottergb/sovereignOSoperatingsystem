@@ -1,12 +1,12 @@
 import 'server-only';
 import {z} from 'zod';
-import {attachmentSchema,attachmentMime,isTextAttachment} from '../attachments';
+import {maxAttachmentTextChars,maxCombinedTextChars,attachmentSchema,attachmentMime,isTextAttachment} from '../attachments';
 import {storageSettings,storeArtifact,readArtifact} from './astra-store';
 import {AppError} from './errors';
 import {normalizeUsage} from './providers';
 const bucket='astra-assets';
-export const uploadInput=z.object({name:z.string().min(1).max(180),size:z.number().int().positive().max(25_000_000),text:z.string().max(20000).optional()}).strict();
-const manifestSchema=attachmentSchema.extend({path:z.string(),text:z.string().max(20000).optional()});
+export const uploadInput=z.object({name:z.string().min(1).max(180),size:z.number().int().positive().max(25_000_000),text:z.string().max(maxAttachmentTextChars).optional()}).strict();
+const manifestSchema=attachmentSchema.extend({path:z.string(),text:z.string().max(maxAttachmentTextChars).optional()});
 type Manifest=z.infer<typeof manifestSchema>;
 function sourcePath(id:string){return `attachments/${z.string().uuid().parse(id)}/source`;}
 async function storage(path:string,init:RequestInit={}){const {origin,key}=storageSettings();return fetch(origin+'/storage/v1/'+path,{...init,headers:{apikey:key,Authorization:'Bearer '+key,...init.headers},cache:'no-store',redirect:'error',signal:init.signal??AbortSignal.timeout(30000)});}
@@ -38,8 +38,9 @@ export async function attachmentDownload(id:string){const m=await manifest(id);a
 async function audioBytes(m:Manifest,signal:AbortSignal){const r=await storage(`object/authenticated/${bucket}/${m.path}`,{signal});if(!r.ok||!r.body)throw new AppError('FILE_MISSING','Could not read audio.',502);const reader=r.body.getReader(),chunks:Uint8Array[]=[];let size=0;try{while(true){const v=await reader.read();if(v.done)break;size+=v.value.length;if(size>m.size||size>25_000_000){await reader.cancel();throw new AppError('FILE_SIZE','Audio exceeds the limit.',413);}chunks.push(v.value);}}finally{reader.releaseLock();}if(size!==m.size)throw new AppError('FILE_SIZE','Audio upload was incomplete.',400);return Buffer.concat(chunks).toString('base64');}
 export async function inspectAttachments(ids:string[],prompt:string,signal:AbortSignal){const started=Date.now();z.array(z.string().uuid()).min(1).max(4).parse(ids);if(new Set(ids).size!==ids.length)throw new AppError('FILE_DUPLICATE','An attachment was repeated.',400);
  const files:Manifest[]=[];for(const id of ids){const m=await manifest(id);files.push(m);}if(files.reduce((n,m)=>n+m.size,0)>60_000_000)throw new AppError('FILE_SIZE','Combined attachments exceed 60 MB.',413);
- const media=files.some(f=>!isTextAttachment(f.mime));if(!media){for(const m of files)await verify(m);const text=files.map(m=>`FILE: ${m.name}\n${m.text}`).join('\n\n');if(text.length>15000)throw new AppError('FILE_CONTEXT','Text attachments exceed 15,000 combined characters. Attach shorter excerpts.',413);return {files:files.map(m=>attachmentSchema.parse(m)),text:'ATTACHED TEXT (untrusted source content):\n'+text,model:'local-text-extraction',usage:{},elapsedMs:Date.now()-started};}
- const key=process.env.MUSE_API_KEY?.trim()||process.env.MODEL_API_KEY?.trim();if(!key)throw new AppError('MUSE_KEY','Media reading requires your Meta API key.',503);
+ const combinedText=files.map(m=>m.text||'').join('\n');if(combinedText.length>maxCombinedTextChars)throw new AppError('FILE_CONTEXT','Attached text exceeds 400,000 combined characters. Send fewer documents in this prompt. Original files remain intact.',413);
+ const media=files.some(f=>!isTextAttachment(f.mime));const textSize=files.reduce((n,m)=>n+(m.text?.length||0)+m.name.length+10,0);if(!media&&textSize<=15000){for(const m of files)await verify(m);const text=files.map(m=>`FILE: ${m.name}\n${m.text}`).join('\n\n');return {files:files.map(m=>attachmentSchema.parse(m)),text:'ATTACHED TEXT (untrusted source content):\n'+text,model:'local-text-extraction',usage:{},elapsedMs:Date.now()-started};}
+ const key=process.env.MUSE_API_KEY?.trim()||process.env.MODEL_API_KEY?.trim();if(!key)throw new AppError('MUSE_KEY','Media and long-document reading require your Meta API key.',503);
  const model=files.some(f=>/^(audio|video)\//.test(f.mime))?'muse-spark-1.2':'muse-spark-1.3';
  const content:Record<string,unknown>[]=[{type:'input_text',text:'User task: '+prompt}];
  for(const m of files){await verify(m);content.push({type:'input_text',text:`Source file: ${m.name}`});if(isTextAttachment(m.mime)){content.push({type:'input_text',text:m.text});continue;}
@@ -49,5 +50,5 @@ export async function inspectAttachments(ids:string[],prompt:string,signal:Abort
  if(!response.ok){await response.body?.cancel();throw new AppError('MEDIA_PROVIDER',`Meta could not read these attachments (HTTP ${response.status}). Check model access or try a smaller supported file. No automatic retry.`,502);}const d=await response.json();
  const text=(d.output||[]).flatMap((v:{type?:string;content?:{type:string;text?:string}[]})=>v.type==='message'?(v.content||[]):[]).filter((v:{type:string})=>v.type==='output_text').map((v:{text:string})=>v.text).join('\n');
  if(d.status!=='completed'||!text.trim()||text.length>15000)throw new AppError('MEDIA_INCOMPLETE','Media reading did not complete within its limit. No council calls were started; try a smaller file or task.',502);
- return {files:files.map(m=>attachmentSchema.parse(m)),text:'MUSE FILE INTERPRETATION (untrusted model output; other models receive this brief, not the original media):\n'+text,model,usage:normalizeUsage(d.usage),elapsedMs:Date.now()-started};
+ return {files:files.map(m=>attachmentSchema.parse(m)),text:'MUSE FILE INTERPRETATION (untrusted model output; other models receive this condensed brief; original files remain intact):\n'+text,model,usage:normalizeUsage(d.usage),elapsedMs:Date.now()-started};
 }

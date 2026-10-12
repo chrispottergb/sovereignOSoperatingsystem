@@ -23,7 +23,7 @@ const schema=z.discriminatedUnion('action',[
 export const maxDuration=300;
 export async function POST(request:Request){try{
  if(!process.env.WORKER_SECRET||!constantEqual(request.headers.get('authorization')||'','Bearer '+process.env.WORKER_SECRET))throw new AppError('FORBIDDEN','MCP gateway authorization required.',403);
- limiter.take('mcp-gateway',60,60000);const parsed=schema.safeParse(await readJsonLimited(request,350000));if(!parsed.success)throw new AppError('VALIDATION','Invalid MCP gateway request.',400);const v=parsed.data;
+ limiter.take('mcp-gateway',60,60000);const parsed=schema.safeParse(await readJsonLimited(request,2000000));if(!parsed.success)throw new AppError('VALIDATION','Invalid MCP gateway request.',400);const v=parsed.data;
  if(v.action==='attachment_upload')return Response.json(await createAttachment(v.input),{headers:{'Cache-Control':'no-store'}});
  if(v.action==='attachment_inspect')return Response.json(await inspectAttachments(v.ids,v.prompt,request.signal),{headers:{'Cache-Control':'no-store'}});
  if(v.action==='muse_probe')return Response.json(await askMuse({prompt:'Reply with exactly CONNECTED.'},request.signal,true));
