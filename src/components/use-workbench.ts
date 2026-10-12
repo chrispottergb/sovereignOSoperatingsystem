@@ -1,4 +1,5 @@
 "use client";
+import {readMuseSettings,routeMuse} from '@/lib/muse-settings';
 import { useCallback, useEffect, useRef, useState } from "react";
 import { providerIds, type Answer, type Conversation, type GenerateInput, type ProviderId, type StreamEvent, type Turn, type Workspace } from "@/lib/contracts";
 import { BrowserHistoryRepository, emptyWorkspace, historyFor } from "@/lib/history";
@@ -116,7 +117,7 @@ export function useWorkbench() {
       if(read()?.mode === "live" && read()?.useMuse && !read()?.muse){
         update("researching","Muse is preparing a specialist contribution for the council…");
         const turn=read()!;
-        const response=await fetch('/api/muse',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({action:'advise',input:{prompt:turn.prompt,context:JSON.stringify({project:turn.context,evidence:turn.sharedEvidence})}})});
+        const response=await fetch('/api/muse',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({action:'advise',input:{...turn.museOptions,prompt:turn.prompt,context:JSON.stringify({project:turn.context,evidence:turn.sharedEvidence})}})});
         const data=await response.json();if(!response.ok)throw Error(data.error?.message||'Muse contribution failed.');patch({muse:data});
       }
       await runChatWorkflow({ signal: controller.signal, read, patch, update, resumeResearch, run: (id, phase) => run(conversationId, turnId, id, "synthesis", phase) }); }
@@ -142,7 +143,8 @@ export function useWorkbench() {
   function submit(prompt: string, projectId: string, conversationId: string | undefined, selected: ProviderId[], mode: "live" | "demo", lead?: ProviderId, spendingMode: SpendingMode = "economy", useMuse = false) {
     const project = current.current.projects.find(p => p.id === projectId); if (!project) return;
     const id = conversationId || crypto.randomUUID();
-    const turn: Turn = { useMuse, spendingMode, id: crypto.randomUUID(), prompt, createdAt: Date.now(), mode, context: { projectName: project.name, notes: project.notes }, engine: current.current.engine || defaultEngine, analytics: current.current.analytics, answers: {} };
+    const museSettings=readMuseSettings();
+    const turn: Turn = { useMuse: mode === "live" && Boolean(lead) && (useMuse || routeMuse(prompt,museSettings)), museOptions:{model:museSettings.model,reasoning:museSettings.reasoning}, spendingMode, id: crypto.randomUUID(), prompt, createdAt: Date.now(), mode, context: { projectName: project.name, notes: project.notes }, engine: current.current.engine || defaultEngine, analytics: current.current.analytics, answers: {} };
     mutate(w => {
       const existing = w.conversations.find(c => c.id === id);
       const conversation: Conversation = existing ? { ...existing, updatedAt: Date.now(), turns: [...existing.turns, turn] } : { id, projectId, title: prompt.slice(0, 70), createdAt: Date.now(), updatedAt: Date.now(), turns: [turn] };

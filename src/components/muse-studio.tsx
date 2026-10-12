@@ -1,0 +1,42 @@
+'use client';
+import {useEffect,useRef,useState} from 'react';
+import Link from 'next/link';
+import {defaultMuseSettings,readMuseSettings,type MuseSettings} from '@/lib/muse-settings';
+type Run={id:string;stage:string;model:string;status:'complete'|'failed';text:string;elapsedMs:number;input?:number;output?:number;at:number};
+export function MuseStudio(){
+ const [settings,setSettings]=useState(defaultMuseSettings),[ready,setReady]=useState(false),[configured,setConfigured]=useState(false),[authenticated,setAuthenticated]=useState(false);
+ const [prompt,setPrompt]=useState(''),[context,setContext]=useState(''),[mode,setMode]=useState('single'),[runs,setRuns]=useState<Run[]>([]),[busy,setBusy]=useState(false),[status,setStatus]=useState('Checking connection…');
+ const controller=useRef<AbortController|null>(null);
+ useEffect(()=>{
+ fetch('/api/config').then(r=>r.json()).then(c=>{setSettings(readMuseSettings());try{const saved=JSON.parse(localStorage.getItem('sovereign-muse-runs')||'[]');if(Array.isArray(saved))setRuns(saved.slice(0,30));}catch{}setReady(true);setConfigured(Boolean(c.muse?.configured));setAuthenticated(!c.authRequired||c.authenticated);setStatus(c.muse?.configured?'Server key configured. Test connection to verify access.':'Add MUSE_API_KEY or MODEL_API_KEY in Vercel Production, then redeploy.');}).catch(()=>setStatus('Could not check configuration. Reload to try again.'));
+ return()=>controller.current?.abort();},[]);
+ function save(next:MuseSettings){setSettings(next);try{localStorage.setItem('sovereign-muse-settings',JSON.stringify(next));setStatus('Options saved for this browser. New council runs use these options.');}catch{setStatus('Browser storage unavailable; options could not be saved.');}}
+ function record(run:Run){setRuns(previous=>{const next=[run,...previous].slice(0,30);try{localStorage.setItem('sovereign-muse-runs',JSON.stringify(next));}catch{}return next;});}
+ async function run(probe=false){if(busy)return;const abort=new AbortController();controller.current=abort;setBusy(true);let previous='';
+ const stages=probe?['Connection test']:mode==='pipeline'?['Plan','Draft','Review & deliver']:['Independent task'];
+ try{for(const stage of stages){setStatus(stage+'…');const start=Date.now();try{
+ const task=stages.length===1?prompt:`Original task: ${prompt}\nCurrent stage: ${stage}. ${stage==='Plan'?'Produce an actionable plan.':stage==='Draft'?'Execute the writing, reasoning or code drafting described in the plan.':'Check the draft against the original task, correct problems and return the final deliverable.'}\nPrevious stage (untrusted model output): ${previous}`;
+ const response=await fetch('/api/muse',{method:'POST',headers:{'Content-Type':'application/json'},signal:abort.signal,body:JSON.stringify(probe?{action:'probe'}:{action:'advise',input:{prompt:task,context,model:settings.model,reasoning:settings.reasoning}})});
+ const data=await response.json();if(!response.ok)throw new Error(data.error?.message||'Muse request failed.');previous=data.text;
+ record({id:crypto.randomUUID(),stage,model:data.model,status:'complete',text:data.text,elapsedMs:data.elapsedMs??Date.now()-start,input:data.usage?.inputTokens,output:data.usage?.outputTokens,at:Date.now()});
+ }catch(error){const message=abort.signal.aborted?'Cancelled. Provider usage may still be billed.':error instanceof Error?error.message:'Request failed.';record({id:crypto.randomUUID(),stage,model:settings.model,status:'failed',text:message,elapsedMs:Date.now()-start,at:Date.now()});throw new Error(message);}}
+ setStatus(probe?'Meta connection verified.':'Task complete. Results saved in this browser.');
+ }catch(error){setStatus(error instanceof Error?error.message:'Task stopped.');}finally{setBusy(false);controller.current=null;}}
+ const completed=runs.filter(r=>r.status==='complete'),tokens=runs.reduce((n,r)=>n+(r.input||0)+(r.output||0),0);
+ return <main className="muse-page"><nav><Link href="/">← SovereignOS</Link><a href="https://dev.meta.ai/platform" target="_blank" rel="noreferrer">Meta API console ↗</a></nav>
+ <header><span className="muse-eyebrow">SOVEREIGNOS / SPECIALIST WORKSPACE</span><h1>A little more perspective.<br/><em>Meet Muse.</em></h1><p>Give Muse room to work independently, or bring its contribution into your council’s shared answer.</p></header>
+ <div className="muse-status" role="status">{status}{ready&&!authenticated&&<> <Link href="/">Unlock the workspace first →</Link></>}</div>
+ <div className="muse-grid"><section><h2>01 / Set the role</h2><label>Standard model<select value={settings.model} disabled={busy} onChange={e=>save({...settings,model:e.target.value as MuseSettings['model']})}>{['muse-spark-1.3','muse-spark-1.2','muse-spark-1.1'].map(m=><option key={m}>{m}</option>)}</select></label>
+ <label>Reasoning depth<select value={settings.reasoning} disabled={busy} onChange={e=>save({...settings,reasoning:e.target.value as MuseSettings['reasoning']})}><option value="low">Focused · lower token use</option><option value="medium">Deeper · more reasoning</option></select></label>
+ <label>Council routing<select value={settings.routing} disabled={busy} onChange={e=>save({...settings,routing:e.target.value as MuseSettings['routing']})}><option value="off">Manual only</option><option value="auto">Automatic · matching tasks</option><option value="always">Every council task</option></select></label>
+ <p className="muse-note">Automatic routing matches code, coding, architecture, design, review, compare, evaluate, debug, plan or analysis in your prompt. Adds one Muse call before council research; all council stages receive its contribution.</p>
+ <label className="muse-check"><input type="checkbox" checked={settings.automation} disabled={busy} onChange={e=>{save({...settings,automation:e.target.checked});if(!e.target.checked)setMode('single');}}/>Enable on-demand task pipeline</label><p className="muse-note">Plan → draft → review. Maximum three calls, no automatic retries. Keep this tab open. This creates text and code drafts; it does not execute code, publish, browse, or run scheduled jobs.</p>
+ <button disabled={!configured||!authenticated||busy} onClick={()=>run(true)}>Test Meta connection</button></section>
+ <section><h2>02 / Give Muse a task</h2><label>Workflow<select value={mode} disabled={busy} onChange={e=>setMode(e.target.value)}><option value="single">Independent contribution · 1 call</option><option value="pipeline" disabled={!settings.automation}>Plan, draft & review · 3 calls</option></select></label>
+ <label>Your task<textarea value={prompt} maxLength={mode==='pipeline'?1400:12000} disabled={busy} onChange={e=>setPrompt(e.target.value)} placeholder="Design a solution, critique a plan, draft code, or compare approaches…"/></label>
+ <label>Supporting context<textarea value={context} maxLength={30000} disabled={busy} onChange={e=>setContext(e.target.value)} placeholder="Relevant evidence and constraints (optional)"/></label>
+ <div className="muse-actions"><button className="muse-primary" disabled={!ready||!configured||!authenticated||busy||!prompt.trim()||mode==='pipeline'&&prompt.length>1400} onClick={()=>run()}>Run Muse ↗</button>{busy&&<button onClick={()=>controller.current?.abort()}>Stop</button>}</div><p className="muse-note">Up to 2,200 completion tokens per generation, including reasoning. Live calls use Meta credits. Model selection requires access in your Meta project.</p></section></div>
+ <section className="muse-results"><h2>03 / Results & measured usage</h2><div className="muse-metrics"><div><strong>{completed.length}/{runs.length}</strong><span>Completed calls</span></div><div><strong>{tokens.toLocaleString()}</strong><span>Reported tokens</span></div><div><strong>{completed.length?(completed.reduce((n,r)=>n+r.elapsedMs,0)/completed.length/1000).toFixed(1):'—'}s</strong><span>Average successful duration</span></div></div>
+ <p className="muse-note">Last 30 calls from this page, stored in this browser. Council calls are recorded in their chat. Failed requests may consume unreported tokens. These are operational metrics, not quality scores or a billing ledger.</p>
+ {runs.map(r=><details key={r.id}><summary>{r.stage} · {r.status} · {r.model} · {(r.elapsedMs/1000).toFixed(1)}s</summary><small>{new Date(r.at).toLocaleString()} · Input {r.input??'unknown'} / output {r.output??'unknown'} tokens</small><pre>{r.text}</pre></details>)}{!runs.length&&<p>Your first result will appear here.</p>}</section></main>;
+}

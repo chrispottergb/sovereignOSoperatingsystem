@@ -11,3 +11,12 @@ This integration provides text advice with supplied context. It does not provide
 Validation: unit suite, desktop/mobile full council test with Muse evidence asserted at every stage, TypeScript, scoped lint, Vercel production build, then live Meta smoke test.
 
 Production deployment: dpl_9KPW4T14BkVfV3Csh2QPTUYb3jpD (2026-10-10). Live probe reached Meta but returned HTTP 402. No successful generation verified; owner must resolve Meta billing/Standard access before use. No automatic Contributor fallback or credit purchase.
+
+## Muse workspace
+
+`/muse` adds Standard model and reasoning dropdowns, a connection probe, independent tasks and an opt-in three-call plan/draft/review workflow. Options and the last 30 page calls are browser-local. Routing can be manual, all council prompts, or a documented keyword matcher for design/review/code/planning tasks. Each turn snapshots model options and reuses its completed Muse contribution on retry. All council stages receive that contribution. MCP `sovereign_muse_advice` also accepts model and reasoning.
+
+Metrics report provider token counts, client/server elapsed duration and success/failure. They are not cost or quality estimates. Failed requests can still incur unreported usage. This release does not grant shell, browsing, publishing, scheduled execution or cloud worker access. The original cloud execution restriction remains in effect.
+
+Live verification: Production deployment dpl_98jYqFbvR9Jq7pnHzQCn5ndRg1PJ returned HTTP 200 for muse_probe (47 input / 18 output tokens, 1.07s) and a substantive muse_advise task (140 input / 855 output tokens, 10.515s). Full unit suite: 180 passed. Desktop/mobile Muse workflows: 4 passed; existing council: 2 passed. Browser setup uses automatic matching and enables the on-demand pipeline; workspace authentication is still required to run tasks.
+

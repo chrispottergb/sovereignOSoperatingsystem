@@ -1,7 +1,7 @@
 import {z} from 'zod';
 import {auth,assertSameOrigin,readJsonLimited} from '@/lib/server/auth';
 import {askMuse,museInput} from '@/lib/server/muse';
-import {errorResponse} from '@/lib/server/errors';
+import {AppError,errorResponse} from '@/lib/server/errors';
 import {limiter} from '@/lib/server/limits';
 export const maxDuration=120;
 export async function POST(request:Request){try{
@@ -9,4 +9,4 @@ export async function POST(request:Request){try{
  const body=z.discriminatedUnion('action',[z.object({action:z.literal('probe')}).strict(),z.object({action:z.literal('advise'),input:museInput}).strict()]).parse(await readJsonLimited(request,150000));
  const result=await askMuse(body.action==='probe'?{prompt:'Reply with exactly CONNECTED.',context:''}:body.input,request.signal,body.action==='probe');
  return Response.json(result,{headers:{'Cache-Control':'no-store'}});
-}catch(e){return errorResponse(e);}}
+}catch(e){return errorResponse(e instanceof z.ZodError?new AppError('VALIDATION','Check the prompt length, model and reasoning options.',400):e);}}
