@@ -1,22 +1,26 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
 import Link from 'next/link';
+import type {Attachment} from '@/lib/attachments';
+import {AttachmentTray,useAttachments} from './attachment-tray';
 import {defaultMuseSettings,readMuseSettings,type MuseSettings} from '@/lib/muse-settings';
-type Run={id:string;stage:string;model:string;status:'complete'|'failed';text:string;elapsedMs:number;input?:number;output?:number;at:number};
+type Run={files?:Attachment[];id:string;stage:string;model:string;status:'complete'|'failed';text:string;elapsedMs:number;input?:number;output?:number;at:number};
 export function MuseStudio(){
  const [settings,setSettings]=useState(defaultMuseSettings),[ready,setReady]=useState(false),[configured,setConfigured]=useState(false),[authenticated,setAuthenticated]=useState(false);
  const [prompt,setPrompt]=useState(''),[context,setContext]=useState(''),[mode,setMode]=useState('single'),[runs,setRuns]=useState<Run[]>([]),[busy,setBusy]=useState(false),[status,setStatus]=useState('Checking connection…');
+ const attachments=useAttachments();
  const controller=useRef<AbortController|null>(null);
  useEffect(()=>{
  fetch('/api/config').then(r=>r.json()).then(c=>{setSettings(readMuseSettings());try{const saved=JSON.parse(localStorage.getItem('sovereign-muse-runs')||'[]');if(Array.isArray(saved))setRuns(saved.slice(0,30));}catch{}setReady(true);setConfigured(Boolean(c.muse?.configured));setAuthenticated(!c.authRequired||c.authenticated);setStatus(c.muse?.configured?'Server key configured. Test connection to verify access.':'Add MUSE_API_KEY or MODEL_API_KEY in Vercel Production, then redeploy.');}).catch(()=>setStatus('Could not check configuration. Reload to try again.'));
  return()=>controller.current?.abort();},[]);
  function save(next:MuseSettings){setSettings(next);try{localStorage.setItem('sovereign-muse-settings',JSON.stringify(next));setStatus('Options saved for this browser. New council runs use these options.');}catch{setStatus('Browser storage unavailable; options could not be saved.');}}
  function record(run:Run){setRuns(previous=>{const next=[run,...previous].slice(0,30);try{localStorage.setItem('sovereign-muse-runs',JSON.stringify(next));}catch{}return next;});}
- async function run(probe=false){if(busy)return;const abort=new AbortController();controller.current=abort;setBusy(true);let previous='';
+ async function run(probe=false){if(busy||attachments.busy)return;const abort=new AbortController();controller.current=abort;setBusy(true);let previous='';
  const stages=probe?['Connection test']:mode==='pipeline'?['Plan','Draft','Review & deliver']:['Independent task'];
- try{for(const stage of stages){setStatus(stage+'…');const start=Date.now();try{
+ try{setStatus('Preparing attached sources…');const attached=probe?undefined:await attachments.prepare(prompt,abort.signal);if(attached&&!attached.reused)record({id:crypto.randomUUID(),stage:'Attachment reading',files:attached.files,model:attached.model,status:'complete',text:attached.text,elapsedMs:attached.elapsedMs,input:attached.usage.inputTokens,output:attached.usage.outputTokens,at:Date.now()});
+ for(const stage of stages){abort.signal.throwIfAborted();setStatus(stage+'…');const start=Date.now();try{
  const task=stages.length===1?prompt:`Original task: ${prompt}\nCurrent stage: ${stage}. ${stage==='Plan'?'Produce an actionable plan.':stage==='Draft'?'Execute the writing, reasoning or code drafting described in the plan.':'Check the draft against the original task, correct problems and return the final deliverable.'}\nPrevious stage (untrusted model output): ${previous}`;
- const response=await fetch('/api/muse',{method:'POST',headers:{'Content-Type':'application/json'},signal:abort.signal,body:JSON.stringify(probe?{action:'probe'}:{action:'advise',input:{prompt:task,context,model:settings.model,reasoning:settings.reasoning}})});
+ const response=await fetch('/api/muse',{method:'POST',headers:{'Content-Type':'application/json'},signal:abort.signal,body:JSON.stringify(probe?{action:'probe'}:{action:'advise',input:{prompt:task,context:[context,attached?.text].filter(Boolean).join("\n\n"),model:settings.model,reasoning:settings.reasoning}})});
  const data=await response.json();if(!response.ok)throw new Error(data.error?.message||'Muse request failed.');previous=data.text;
  record({id:crypto.randomUUID(),stage,model:data.model,status:'complete',text:data.text,elapsedMs:data.elapsedMs??Date.now()-start,input:data.usage?.inputTokens,output:data.usage?.outputTokens,at:Date.now()});
  }catch(error){const message=abort.signal.aborted?'Cancelled. Provider usage may still be billed.':error instanceof Error?error.message:'Request failed.';record({id:crypto.randomUUID(),stage,model:settings.model,status:'failed',text:message,elapsedMs:Date.now()-start,at:Date.now()});throw new Error(message);}}
@@ -34,9 +38,9 @@ export function MuseStudio(){
  <button disabled={!configured||!authenticated||busy} onClick={()=>run(true)}>Test Meta connection</button></section>
  <section><h2>02 / Give Muse a task</h2><label>Workflow<select value={mode} disabled={busy} onChange={e=>setMode(e.target.value)}><option value="single">Independent contribution · 1 call</option><option value="pipeline" disabled={!settings.automation}>Plan, draft & review · 3 calls</option></select></label>
  <label>Your task<textarea value={prompt} maxLength={mode==='pipeline'?1400:12000} disabled={busy} onChange={e=>setPrompt(e.target.value)} placeholder="Design a solution, critique a plan, draft code, or compare approaches…"/></label>
- <label>Supporting context<textarea value={context} maxLength={30000} disabled={busy} onChange={e=>setContext(e.target.value)} placeholder="Relevant evidence and constraints (optional)"/></label>
- <div className="muse-actions"><button className="muse-primary" disabled={!ready||!configured||!authenticated||busy||!prompt.trim()||mode==='pipeline'&&prompt.length>1400} onClick={()=>run()}>Run Muse ↗</button>{busy&&<button onClick={()=>controller.current?.abort()}>Stop</button>}</div><p className="muse-note">Up to 2,200 completion tokens per generation, including reasoning. Live calls use Meta credits. Model selection requires access in your Meta project.</p></section></div>
+ <AttachmentTray files={attachments.files} onChange={attachments.setFiles} disabled={busy||attachments.busy||!authenticated} onBusy={attachments.setBusy}/><label>Supporting context<textarea value={context} maxLength={30000} disabled={busy} onChange={e=>setContext(e.target.value)} placeholder="Relevant evidence and constraints (optional)"/></label>
+ <div className="muse-actions"><button className="muse-primary" disabled={!ready||!configured||!authenticated||busy||attachments.busy||!prompt.trim()||mode==='pipeline'&&prompt.length>1400} onClick={()=>run()}>Run Muse ↗</button>{busy&&<button onClick={()=>controller.current?.abort()}>Stop</button>}</div><p className="muse-note">Up to 2,200 completion tokens per generation, including reasoning. Live calls use Meta credits. Model selection requires access in your Meta project.</p></section></div>
  <section className="muse-results"><h2>03 / Results & measured usage</h2><div className="muse-metrics"><div><strong>{completed.length}/{runs.length}</strong><span>Completed calls</span></div><div><strong>{tokens.toLocaleString()}</strong><span>Reported tokens</span></div><div><strong>{completed.length?(completed.reduce((n,r)=>n+r.elapsedMs,0)/completed.length/1000).toFixed(1):'—'}s</strong><span>Average successful duration</span></div></div>
  <p className="muse-note">Last 30 calls from this page, stored in this browser. Council calls are recorded in their chat. Failed requests may consume unreported tokens. These are operational metrics, not quality scores or a billing ledger.</p>
- {runs.map(r=><details key={r.id}><summary>{r.stage} · {r.status} · {r.model} · {(r.elapsedMs/1000).toFixed(1)}s</summary><small>{new Date(r.at).toLocaleString()} · Input {r.input??'unknown'} / output {r.output??'unknown'} tokens</small><pre>{r.text}</pre></details>)}{!runs.length&&<p>Your first result will appear here.</p>}</section></main>;
+ {runs.map(r=><details key={r.id}><summary>{r.stage} · {r.status} · {r.model} · {(r.elapsedMs/1000).toFixed(1)}s</summary><small>{new Date(r.at).toLocaleString()} · Input {r.input??'unknown'} / output {r.output??'unknown'} tokens</small><div>{r.files?.map(f=><p key={f.id}><a href={"/api/attachments?id="+f.id} target="_blank" rel="noreferrer">{f.name}</a></p>)}</div><pre>{r.text}</pre></details>)}{!runs.length&&<p>Your first result will appear here.</p>}</section></main>;
 }

@@ -5,15 +5,19 @@ test('dedicated studio collects choices, runs three roles and gates music on val
  const output={prompt:'A warm lo-fi piano song in A Minor',lyrics:'',rationale:'Matches the brief',protocolChecks:[{requirement:'Preserve wording',implementation:'No words changed'}],limitations:[]};
  await page.route('**/api/music-studio',async r=>{
   if(r.request().method()==='POST'){const b=r.request().postDataJSON();actions.push(b.action);if(b.action==='save')config=b.config;
-   if(b.action==='evaluate'){expect(b.brief.genre).toContain('Lo-fi');expect(b.brief.key).toBe('A Minor');runs.push({id:b.id,status:'evaluated',brief:b.brief,config,revision:'revision',protocol_sha256:'fingerprint',evaluation:output});}
+   if(b.action==='evaluate'){expect(b.brief.attachmentBrief.text).toContain('Reference: soft piano');expect(b.brief.genre).toContain('Lo-fi');expect(b.brief.key).toBe('A Minor');runs.push({id:b.id,status:'evaluated',brief:b.brief,config,revision:'revision',protocol_sha256:'fingerprint',evaluation:output});}
    if(b.action==='challenge'){runs[0].status='challenged';runs[0].challenge={assessment:'Checked against QLL',issues:[],revision:output};}
    if(b.action==='validate'){runs[0].status='passed';runs[0].validation={passed:true,issues:[],summary:'Text brief is ready'};}
    if(b.action==='generate')runs[0].job_id='music-job';return r.fulfill({json:{id:b.id||'music-job',revision:'revision'}});
   }
   return r.fulfill({json:{configured:true,config,revision:'revision',runs,setup:null,providers:['openai','claude','perplexity','grok'].map(id=>({id,name:id,model:'fixture',configured:true})),specialists:{configured:true,enabled:true,runnerOnline:true},jobs:[]}});
  });
+ const file={id:'00000000-0000-4000-8000-000000000001',name:'music-reference.txt',mime:'text/plain',size:5};
+ await page.route('https://storage.example/upload',r=>r.fulfill({status:200,body:'{}'}));
+ await page.route('**/api/attachments',r=>r.fulfill({json:r.request().postDataJSON().action==='upload'?{file,uploadUrl:'https://storage.example/upload'}:{files:[file],text:'Reference: soft piano',model:'local-text-extraction',usage:{},elapsedMs:1}}));
  await page.goto('/music');await expect(page.getByRole('heading',{name:/Shape the sound/})).toBeVisible();
  await page.getByRole('button',{name:'Create model prompt with QLL'}).click();await expect(page.getByText('Enter a protocol version, such as v1.',{exact:true})).toBeVisible();
+ await page.getByLabel('Attach prompt files').setInputFiles({name:'music-reference.txt',mimeType:'text/plain',buffer:Buffer.from('hello')});await expect(page.getByRole('link',{name:'music-reference.txt'})).toBeVisible();
  await page.getByLabel('Your idea',{exact:true}).fill('Make a gentle piano track');await page.getByRole('button',{name:'Lo-fi',exact:true}).click();await page.getByLabel('Musical key').selectOption('A Minor');
  await expect(page.getByRole('button',{name:'Lo-fi',exact:true})).toHaveAttribute('aria-pressed','true');
  await page.getByLabel('Version',{exact:true}).fill('test-v1');await page.getByLabel('Authoritative QLL protocol',{exact:true}).fill('Test-only protocol: preserve requested wording.');await page.getByLabel('QLL output checklist (one requirement per line)',{exact:true}).fill('Preserve requested wording');await page.getByRole('button',{name:'Save evaluator & model settings'}).click();

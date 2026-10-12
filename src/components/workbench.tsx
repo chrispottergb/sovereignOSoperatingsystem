@@ -1,4 +1,5 @@
 "use client";
+import {AttachmentTray,useAttachments} from './attachment-tray';
 import {SpecialistPanel} from "./specialist-panel";
 import {CouncilBuild} from "./council-build";
 
@@ -27,6 +28,7 @@ function download(name: string, text: string, type: string) { const url = URL.cr
 
 export function Workbench() {
   const wb = useWorkbench();
+  const attachments=useAttachments(); const [preparingAttachments,setPreparingAttachments]=useState(false);
   const [config, setConfig] = useState<AppConfig>();
   const [configError, setConfigError] = useState("");
   const [selected, setSelected] = useState<ProviderId[]>([...providerIds]);
@@ -79,11 +81,15 @@ export function Workbench() {
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(""), 5000); return () => clearTimeout(timer); }, [notice]);
   function newConversation() { setConversationId(undefined); setPrompt(""); setSidebarOpen(false); textarea.current?.focus(); }
   function toggleProvider(id: ProviderId) { if (masterMode) return; setSelected(ids => ids.includes(id) ? ids.filter(p => p !== id) : [...ids, id]); }
-  function submit(event: FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault();
+    if(attachments.busy||preparingAttachments)return;
     if (!prompt.trim() || prompt.length > 12000 || !selected.length || (masterMode && activeMode === "live" && liveCount < 4) || busy || !wb.loaded || !config?.authenticated) return;
-    const id = wb.submit(prompt.trim(), project.id, conversationId, selected, activeMode, masterMode ? finalEditor : undefined, spendingMode, masterMode && useMuse);
-    if (id) { setConversationId(id); setPrompt(""); setTimeout(() => bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" }), 50); }
+    if(attachments.files.length && activeMode!=="live"){setNotice("Use Live mode to send attachments.");return;}
+    setPreparingAttachments(true);try{const attachmentBrief=await attachments.prepare(prompt.trim());
+    const id = wb.submit(prompt.trim(), project.id, conversationId, selected, activeMode, masterMode ? finalEditor : undefined, spendingMode, masterMode && useMuse, attachmentBrief);
+    if (id) { attachments.clear(); setConversationId(id); setPrompt(""); setTimeout(() => bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" }), 50); }
+    }catch(e){setNotice(e instanceof Error?e.message:"Could not read attachments.");}finally{setPreparingAttachments(false);}
   }
   function openProject() { setDraftName(project.name); setDraftNotes(project.notes); setModal("project"); }
   function saveProject(event: FormEvent) {
@@ -137,6 +143,7 @@ export function Workbench() {
           const completed = Object.values(turn.answers).filter(a => a?.status === "complete" && a.text.trim()).length;
           const turnBusy = councilActive(turn) || Object.values(turn.botRuns || {}).some(a => a?.status === "streaming") || Object.values(turn.answers).some(a => a?.status === "streaming") || turn.synthesis?.status === "streaming";
           return <section key={turn.id} className="turn"><div className="prompt-label"><span className="you-badge">YOU</span><span>{new Date(turn.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>{turn.mode === "demo" && <span className="demo-label">DEMO · SAMPLE OUTPUTS</span>}</div><h2 className="user-prompt">{turn.prompt}</h2><div className="turn-toolbar"><span className="eyebrow">{turn.council ? "SYNTHESIS WORKSPACE" : `${Object.keys(turn.answers).length} PERSPECTIVES`}</span><span className="turn-number">{String(index + 1).padStart(2, "0")}</span></div>
+            {turn.attachmentBrief && <details className="review-details"><summary>Attached sources · {turn.attachmentBrief.files.length} files · {turn.attachmentBrief.model}</summary>{turn.attachmentBrief.files.map(f=><p key={f.id}><a href={"/api/attachments?id="+f.id} target="_blank" rel="noreferrer">{f.name}</a></p>)}<p style={{whiteSpace:"pre-wrap"}}>{turn.attachmentBrief.text}</p><small>Input {turn.attachmentBrief.usage.inputTokens??"—"} / output {turn.attachmentBrief.usage.outputTokens??"—"} tokens</small></details>}
             {turn.muse && <details className="review-details"><summary>Muse adviser · {turn.muse.model} · {((turn.muse.usage.inputTokens||0)+(turn.muse.usage.outputTokens||0)).toLocaleString()} reported tokens</summary><p style={{whiteSpace:"pre-wrap"}}>{turn.muse.text}</p></details>}<WorkflowStatus turn={turn} busy={turnBusy} onStop={() => wb.stopCouncil(conversation.id, turn.id)} onRetry={reuse => void wb.startCouncil(conversation.id, turn.id, turn.council!.participants, turn.council!.lead, reuse)}/>
             {turn.synthesis && (!turn.council || turn.council.status === "complete") && <AnswerCard title={turn.council ? "SovereignOS" : undefined} provider={turn.synthesis.provider} answer={turn.synthesis} synthesis onCancel={() => turn.council ? wb.stopCouncil(conversation.id, turn.id) : wb.cancel(conversation.id, turn.id, turn.synthesis!.provider, true)} onRetry={() => turn.council ? void wb.startCouncil(conversation.id, turn.id, turn.council.participants, turn.council.lead, true) : void wb.run(conversation.id, turn.id, turn.synthesis!.provider, "synthesis")} retryDisabled={councilActive(turn) || Object.values(turn.answers).some(a => a?.status === "streaming")}/>}
             {turn.synthesis?.status === "complete" && <SpecialistPanel turnId={turn.id} prompt={turn.prompt} live={turn.mode === "live"}/>}
@@ -156,8 +163,9 @@ export function Workbench() {
       </main>
       <div className="composer-wrap"><form className="composer" onSubmit={submit}><div className="composer-top"><span className="composer-label">SEND TO</span><div className="model-toggles"><button type="button" aria-pressed={selected.length === providerIds.length} className={`all-toggle ${selected.length === providerIds.length ? "selected" : ""}`} onClick={() => setSelected([...providerIds])}><Layers3 size={13}/>All models</button>{providerIds.map(id => <button type="button" key={id} aria-pressed={selected.includes(id)} className={`model-toggle ${id} ${selected.includes(id) ? "selected" : ""}`} onClick={() => toggleProvider(id)}><span>{providers[id].symbol}</span>{providers[id].name}{selected.includes(id) && <Check size={11}/>}</button>)}</div><span className="parallel-label">Parallel responses<Zap size={12}/></span></div>
         <div className="council-options"><label><input type="checkbox" checked={masterMode} onChange={e => { setMasterMode(e.target.checked); if (e.target.checked) setSelected([...providerIds]); }}/>One combined answer</label>{masterMode && <><label><input type="checkbox" checked={useMuse} disabled={!config?.muse?.configured || activeMode!=="live"} onChange={e=>setUseMuse(e.target.checked)}/>Include Muse adviser (+1 call)</label><label>Answer depth<select aria-label="API spending" value={spendingMode} onChange={e => setSpendingMode(e.target.value as SpendingMode)}><option value="economy">Focused</option><option value="thorough">Full council</option></select></label><label>Final editor<select aria-label="Final editor" value={finalEditor} onChange={e=>setFinalEditor(e.target.value as "claude"|"openai")}><option value="claude">Claude Fable 5.1</option><option value="openai">GPT Astra</option></select></label><small>{spendingMode === "thorough" ? "Four contributions → four cross-reviews → four corrections → one complete deliverable. Up to 13 stage requests." : "Four contributions → four cross-reviews → one answer. Up to 9 stage requests."} Enabled hub evidence is shared with all four. Retries reuse completed work. Keep this tab open while it runs. {activeMode === "demo" ? "Demo uses sample outputs." : "Live calls use API credits."}</small></>}</div>
+        <AttachmentTray files={attachments.files} onChange={attachments.setFiles} disabled={busy||attachments.busy||preparingAttachments||!config?.authenticated} onBusy={attachments.setBusy}/>{preparingAttachments&&<p role="status">Reading attachments before generation…</p>}
         <textarea ref={textarea} value={prompt} onChange={e => setPrompt(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} placeholder={conversation ? "Keep the conversation going…" : "What’s on your mind? Give your models something to think about…"} aria-label="Your prompt" rows={2} maxLength={12000}/>
-        <div className="composer-bottom"><button type="button" className="context-button" onClick={openProject}><Plus size={16}/>{project.notes ? "Context attached" : "Add project context"}</button><div className="send-controls"><span className="keyboard-hint">{prompt.length > 10000 ? `${prompt.length.toLocaleString()} / 12,000` : "Enter to send · Shift + Enter for a new line"}</span><button className="send-button" type="submit" disabled={!prompt.trim() || !selected.length || (masterMode && activeMode === "live" && liveCount < 4) || busy || !wb.loaded || !config?.authenticated} aria-label="Send prompt"><ArrowUp size={19}/></button></div></div>
+        <div className="composer-bottom"><button type="button" className="context-button" onClick={openProject}><Plus size={16}/>{project.notes ? "Context attached" : "Add project context"}</button><div className="send-controls"><span className="keyboard-hint">{prompt.length > 10000 ? `${prompt.length.toLocaleString()} / 12,000` : "Enter to send · Shift + Enter for a new line"}</span><button className="send-button" type="submit" disabled={attachments.busy || preparingAttachments || !prompt.trim() || !selected.length || (masterMode && activeMode === "live" && liveCount < 4) || busy || !wb.loaded || !config?.authenticated} aria-label="Send prompt"><ArrowUp size={19}/></button></div></div>
       </form><div className="composer-disclaimer"><span className="live-dot"/>{activeMode === "demo" ? "Demo mode · Sample responses. No API calls or charges." : "Responses may be inaccurate. Verify important information."}<span className="footer-brand">sovereignOS</span></div></div>
     </div>
     {notice && <div className="toast" role="status">{notice}<button className="icon-button" aria-label="Dismiss notification" onClick={() => setNotice("")}><X size={14}/></button></div>}

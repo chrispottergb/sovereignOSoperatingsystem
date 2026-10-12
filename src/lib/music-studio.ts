@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {attachmentBriefSchema} from './attachments';
 export const musicChoices={
  genre:['Ambient','Hip-hop','Trap','R&B','Soul','Pop','Lo-fi','Electronic','Cinematic','Acoustic'],
  delivery:['Instrumental','Sung','Rap','Spoken word','Sung hook + rap verses','Layered harmonies'],
@@ -11,6 +12,7 @@ export const choiceLabels:Record<keyof typeof musicChoices,string>={genre:'Genre
 export const keys=['Auto','C Major','D Major','E Major','F Major','G Major','A Major','B Major','A Minor','B Minor','C Minor','D Minor','E Minor','F Minor','G Minor'];
 const selections=z.array(z.string().trim().min(1).max(80)).max(6);
 export const musicBrief=z.object({
+ attachmentBrief:attachmentBriefSchema.optional(),
  idea:z.string().trim().min(3).max(3000),lyrics:z.string().max(4000).default(''),
  genre:selections,delivery:selections,tone:selections,singing:selections,rap:selections,outcome:selections,
  key:z.string().trim().min(1).max(30).refine(v=>v!=='Custom','Enter a musical key.'),bpm:z.number().int().min(30).max(300),seconds:z.number().int().min(10).max(120),seed:z.number().int().min(0).max(2147483647),targetId:z.string().regex(/^[a-z0-9.-]{1,60}$/),

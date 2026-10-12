@@ -1,3 +1,4 @@
+import {createAttachment,inspectAttachments,uploadInput} from '@/lib/server/attachments';
 import {askMuse,museConfig,museInput} from '@/lib/server/muse';
 import {listSpecialists,queueMusic,specialistJobs,toggleSpecialist} from '@/lib/server/specialists';
 import {z} from 'zod';
@@ -10,6 +11,7 @@ import {providerConfig} from '@/lib/server/config';
 import {db,readArtifact} from '@/lib/server/astra-store';
 const uuid=z.string().uuid();
 const schema=z.discriminatedUnion('action',[
+ z.object({action:z.literal('attachment_upload'),input:uploadInput}),z.object({action:z.literal('attachment_inspect'),ids:z.array(uuid).min(1).max(4),prompt:z.string().min(1).max(12000)}),
  z.object({action:z.literal('muse_probe')}),z.object({action:z.literal('muse_advise'),input:museInput}),
  z.object({action:z.literal('model'),provider:z.enum(['openai','claude','perplexity','grok']),stage:z.enum(['answer','review','revise','final']),prompt:z.string().min(1).max(290000)}),
  z.object({action:z.literal('list_specialists')}),z.object({action:z.literal('generate_music'),input:z.unknown()}),z.object({action:z.literal('read_specialist_job'),id:uuid}),z.object({action:z.literal('toggle_specialist'),enabled:z.boolean()}),
@@ -22,6 +24,8 @@ export const maxDuration=300;
 export async function POST(request:Request){try{
  if(!process.env.WORKER_SECRET||!constantEqual(request.headers.get('authorization')||'','Bearer '+process.env.WORKER_SECRET))throw new AppError('FORBIDDEN','MCP gateway authorization required.',403);
  limiter.take('mcp-gateway',60,60000);const parsed=schema.safeParse(await readJsonLimited(request,350000));if(!parsed.success)throw new AppError('VALIDATION','Invalid MCP gateway request.',400);const v=parsed.data;
+ if(v.action==='attachment_upload')return Response.json(await createAttachment(v.input),{headers:{'Cache-Control':'no-store'}});
+ if(v.action==='attachment_inspect')return Response.json(await inspectAttachments(v.ids,v.prompt,request.signal),{headers:{'Cache-Control':'no-store'}});
  if(v.action==='muse_probe')return Response.json(await askMuse({prompt:'Reply with exactly CONNECTED.'},request.signal,true));
  if(v.action==='muse_advise')return Response.json(await askMuse(v.input,request.signal));
  if(v.action==='model'){if(v.stage==='final'&&!['claude','openai'].includes(v.provider))throw new AppError('VALIDATION','Final evaluator must be Claude or OpenAI.',400);return Response.json(await completion(request.signal)(v.provider,v.prompt,v.stage));}
