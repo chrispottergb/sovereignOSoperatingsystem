@@ -27,3 +27,9 @@ it('MCP full mode passes all corrected work to Astra without discarding peer obj
  const calls:{stage:Stage;prompt:string;provider:ProviderId}[]=[];const run=createOrchestrator(async(provider,prompt,stage)=>{calls.push({provider,prompt,stage});return {model:provider,response:stage==='final'?JSON.stringify({final:'Actual deliverable',not_checked:['Tests not run']}):stage==='revise'?'CORRECTED_'+provider:'SCOPE: Explain',tokens:{}};});
  const result=await run({task:'Explain',depth:'full',synthesizer:'openai'});expect(calls).toHaveLength(13);expect(result.revisions).toHaveLength(4);expect(result.synthesizer.provider).toBe('openai');for(const p of providerIds)expect(calls.at(-1)!.prompt).toContain('CORRECTED_'+p);expect(calls.at(-1)!.prompt).toContain('GPT Astra');
 });
+
+it('shares tool evidence acquired during contributions with every reviewer and editor',async()=>{
+ const shared:{toolEvidence?:unknown[]}={};const seen:string[]=[];
+ const run=createOrchestrator(async(provider,prompt,stage)=>{if(stage==='answer'&&provider==='claude')shared.toolEvidence=[{name:'read_file',result:'Verified source marker violet'}];if(stage!=='answer')seen.push(prompt);return {model:provider,response:stage==='final'?JSON.stringify({final:'violet',not_checked:[]}):'SCOPE: Explain',tokens:{}};},shared);
+ await run({task:'Explain'});expect(seen).toHaveLength(5);for(const prompt of seen)expect(prompt).toContain('Verified source marker violet');expect(seen.at(-1)).toContain('remains unresolved by the supplied shared tool evidence');
+});

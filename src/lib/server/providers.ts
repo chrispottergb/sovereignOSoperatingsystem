@@ -119,7 +119,7 @@ class HttpAdapter implements ProviderAdapter {
       }
       if (isClaude) {
         if (type === "content_block_start" || type === "content_block_delta") { const citations = extractCitations(e.content_block ?? e.delta); if (citations.length) yield { type: "citations", citations }; }
-        if (type === "message_start") { usage = { ...usage, ...normalizeUsage(obj(e.message).usage) }; yield { type: "usage", usage: model === modelFor(provider) ? withCost(provider, usage) : usage }; }
+        if (type === "message_start") { const message=obj(e.message);if(str(message.model))yield {type:'start',model:str(message.model)!,requestId:str(message.id)||response.headers.get('x-request-id')||'',demo:false}; usage = { ...usage, ...normalizeUsage(obj(e.message).usage) }; yield { type: "usage", usage: model === modelFor(provider) ? withCost(provider, usage) : usage }; }
         if (type === "content_block_delta" && str(obj(e.delta).text)) yield { type: "delta", text: str(obj(e.delta).text)! };
         if (type === "message_delta") { usage = { ...usage, ...normalizeUsage(e.usage) }; finishReason = str(obj(e.delta).stop_reason) || "stop"; yield { type: "usage", usage: model === modelFor(provider) ? withCost(provider, usage) : usage }; }
         if (type === "message_stop") { terminal = true; break; }
