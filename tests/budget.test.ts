@@ -65,3 +65,10 @@ describe("API spending policy", () => {
     expect(restoreWorkspace(JSON.stringify(w)).conversations[0].turns[0].attempts?.[0].usage?.inputTokens).toBe(12);
   });
 });
+
+it('enforces the specialist plan schema even when an exact orchestration prompt is supplied',async()=>{
+ vi.stubEnv('OPENAI_API_KEY','test-only-key');const {symbiosisJsonSchema}=await import('../src/lib/symbiosis');
+ const mock=vi.fn().mockResolvedValue(new Response('data: {"type":"response.completed","response":{}}\n\n',{headers:{'content-type':'text/event-stream'}}));vi.stubGlobal('fetch',mock);
+ for await(const event of adapters.openai.stream({...input,reviewPhase:'routing',exactPrompt:'Build a task plan',responseSchema:symbiosisJsonSchema},new AbortController().signal))void event;
+ const body=JSON.parse(mock.mock.calls[0][1].body);expect(body.text.format).toMatchObject({name:'specialist_plan',strict:true,schema:{additionalProperties:false,required:['objective','assignments','muse','grokbot','checks','limitations']}});expect(body.tools).toBeUndefined();
+});

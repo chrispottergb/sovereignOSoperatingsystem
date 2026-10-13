@@ -9,7 +9,7 @@ import { buildPrompt } from "./prompts";
 import { requestPolicy } from "./budget";
 import { outputFormat } from "./output-format";
 
-export type TaskInput = GenerateInput & { exactPrompt?: string; finalEvaluator?: boolean; reviewOnly?: boolean; task?: { instruction:string; artifacts:unknown; astra?:boolean; deepResearch?:boolean } };
+export type TaskInput = GenerateInput & { responseSchema?:Record<string,unknown>; exactPrompt?: string; finalEvaluator?: boolean; reviewOnly?: boolean; task?: { instruction:string; artifacts:unknown; astra?:boolean; deepResearch?:boolean } };
 export interface ProviderAdapter { stream(input: TaskInput, signal: AbortSignal): AsyncGenerator<StreamEvent> }
 type Obj = Record<string, unknown>;
 function obj(value: unknown): Obj { return value !== null && typeof value === "object" ? value as Obj : {}; }
@@ -94,7 +94,7 @@ class HttpAdapter implements ProviderAdapter {
     const body = isClaude ? { model, system, messages, stream: true, max_tokens: maxTokens }
       : provider === "grok" ? { model, store: false, input: [{ role: "system", content: system }, ...messages], stream: true, max_output_tokens: maxTokens }
       : { ...(provider === "openai" ? { model, store: false } : { ...(reviewOnly ? { model, tools: [], max_steps: 1 } : { preset: model, max_steps: input.task?.deepResearch || (research && input.spendingMode === "thorough") ? 3 : 1 }) }), instructions: system, input: messages, stream: true, max_output_tokens: maxTokens };
-    const response = await fetchProvider(url, { method: "POST", headers, body: JSON.stringify({ ...body, ...searchTools, ...(input.task || input.exactPrompt !== undefined ? {} : outputFormat(input)), ...(reasoning ? { reasoning } : {}), ...(["openai", "grok"].includes(provider) ? { prompt_cache_key: cacheKey } : {}) }) }, signal);
+    const response = await fetchProvider(url, { method: "POST", headers, body: JSON.stringify({ ...body, ...searchTools, ...(input.responseSchema && provider==='openai' ? {text:{format:{type:'json_schema',name:'specialist_plan',strict:true,schema:input.responseSchema}}} : input.task || input.exactPrompt !== undefined ? {} : outputFormat(input)), ...(reasoning ? { reasoning } : {}), ...(["openai", "grok"].includes(provider) ? { prompt_cache_key: cacheKey } : {}) }) }, signal);
     if (!response.body || !response.headers.get("content-type")?.includes("text/event-stream")) { await response.body?.cancel(); throw new AppError("BAD_STREAM", "The provider returned an unexpected response format.", 502); }
     yield { type: "start", model, requestId: response.headers.get("x-request-id") || crypto.randomUUID(), demo: false };
     let terminal = false, finishReason = "stop", usage: Usage = {};

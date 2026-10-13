@@ -1,3 +1,5 @@
+import {planSymbiosis,runGrokbot} from '@/lib/server/symbiosis';
+import {symbiosisInput} from '@/lib/symbiosis';
 import {createAttachment,inspectAttachments,uploadInput} from '@/lib/server/attachments';
 import {askMuse,museConfig,museInput} from '@/lib/server/muse';
 import {listSpecialists,queueMusic,specialistJobs,toggleSpecialist} from '@/lib/server/specialists';
@@ -11,6 +13,7 @@ import {providerConfig} from '@/lib/server/config';
 import {db,readArtifact,storageReady} from '@/lib/server/astra-store';
 const uuid=z.string().uuid();
 const schema=z.discriminatedUnion('action',[
+ z.object({action:z.literal('symbiosis_plan'),input:symbiosisInput}),z.object({action:z.literal('grokbot'),input:symbiosisInput.extend({brief:z.string().min(1).max(1800)})}),
  z.object({action:z.literal('attachment_upload'),input:uploadInput}),z.object({action:z.literal('attachment_inspect'),ids:z.array(uuid).min(1).max(4),prompt:z.string().min(1).max(12000)}),
  z.object({action:z.literal('muse_probe')}),z.object({action:z.literal('muse_advise'),input:museInput}),
  z.object({action:z.literal('model'),provider:z.enum(['openai','claude','perplexity','grok']),stage:z.enum(['answer','review','revise','final']),spendingMode:z.enum(['economy','thorough']).default('economy'),prompt:z.string().min(1).max(290000)}),
@@ -24,6 +27,8 @@ export const maxDuration=300;
 export async function POST(request:Request){try{
  if(!process.env.WORKER_SECRET||!constantEqual(request.headers.get('authorization')||'','Bearer '+process.env.WORKER_SECRET))throw new AppError('FORBIDDEN','MCP gateway authorization required.',403);
  limiter.take('mcp-gateway',60,60000);const parsed=schema.safeParse(await readJsonLimited(request,2000000));if(!parsed.success)throw new AppError('VALIDATION','Invalid MCP gateway request.',400);const v=parsed.data;
+ if(v.action==='symbiosis_plan')return Response.json(await planSymbiosis(v.input,request.signal),{headers:{'Cache-Control':'no-store'}});
+ if(v.action==='grokbot')return Response.json(await runGrokbot(v.input,request.signal),{headers:{'Cache-Control':'no-store'}});
  if(v.action==='attachment_upload')return Response.json(await createAttachment(v.input),{headers:{'Cache-Control':'no-store'}});
  if(v.action==='attachment_inspect')return Response.json(await inspectAttachments(v.ids,v.prompt,request.signal),{headers:{'Cache-Control':'no-store'}});
  if(v.action==='muse_probe')return Response.json(await askMuse({prompt:'Reply with exactly CONNECTED.'},request.signal,true));

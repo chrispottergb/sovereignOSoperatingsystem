@@ -19,12 +19,15 @@ export function WorkflowStatus({ turn, busy, onStop, onRetry }: { turn: Turn; bu
   const resumeVotes = canResumeVotes(turn);
   const attempts = turn.attempts || [];
   const measured = attempts.filter(a => a.usage?.inputTokens !== undefined || a.usage?.outputTokens !== undefined);
-  const tokens = measured.reduce((n,a) => n + (a.usage?.inputTokens || 0) + (a.usage?.outputTokens || 0), 0);
+  const extras=[turn.orchestration,turn.muse,turn.grokbot].filter(x=>!!x);
+  const extraTokens=extras.reduce((n,x)=>n+(x?.usage.inputTokens||0)+(x?.usage.outputTokens||0),0);
+  const tokens = extraTokens + measured.reduce((n,a) => n + (a.usage?.inputTokens || 0) + (a.usage?.outputTokens || 0), 0);
   if (turn.council.protocol === "chat") return <section className="council-status workflow-summary" role="status" aria-label="Synthesis progress">
     <strong>{active ? "Working on your answer" : turn.council.status === "complete" ? "Research and review complete" : "Workflow paused"}</strong><p>{turn.council.message}</p>
+    {turn.orchestration && <details><summary>Symbiosis plan and specialist prompts</summary><p>{turn.orchestration.plan.objective}</p><p>Muse: {turn.orchestration.plan.muse.reason}</p><p>Grokbot: {turn.orchestration.plan.grokbot.reason}</p>{turn.orchestration.plan.muse.needed&&<p>Muse prompt: {turn.orchestration.plan.muse.prompt}</p>}{turn.orchestration.plan.grokbot.needed&&<p>Grokbot prompt: {turn.orchestration.plan.grokbot.prompt}</p>}<p>{turn.orchestration.plan.limitations.join(' ')}</p><p>Specialist outputs feed the shared council answer. No publishing or deployment is performed by these calls.</p></details>}
     {active && <button className="secondary-button" onClick={onStop}>Stop</button>}
     {!active && ["error","cancelled"].includes(turn.council.status) && <button className="secondary-button" disabled={busy || retryAt > now} onClick={()=>onRetry(true)}>{retryAt > now ? "Waiting for provider cooldown" : "Continue with saved work"}</button>}
-    {!!attempts.length && <details><summary>Usage · {attempts.length} requests · {tokens.toLocaleString()} reported tokens</summary><p>Missing usage is unknown. Provider search fees may apply.</p></details>}
+    {(!!attempts.length||extras.length>0) && <details><summary>Usage · {attempts.length} council requests · {extras.length} saved specialist results · {tokens.toLocaleString()} reported tokens</summary><p>Missing usage is unknown, including failed specialist calls. Provider search fees may apply.</p></details>}
   </section>;
   return <section className="council-status workflow-summary" role="status" aria-label="Campaign workflow status">
     <strong>{turn.council.status === "error" ? "Final plan blocked" : "Master workflow · " + turn.council.status}</strong>
