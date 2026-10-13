@@ -30,7 +30,7 @@ export async function GET(request:Request){try{
  const id=new URL(request.url).searchParams.get("run");
  if(id){if(!uuid.safeParse(id).success)throw new AppError("VALIDATION","Invalid run.",400);const steps=await db<StepRow[]>(`astra_steps?run_id=eq.${id}&order=ordinal`);const final=steps.find(s=>s.id==="final");return Response.json({steps,answer:final?.output_path?await readArtifact(final.output_path):null},{headers:{"Cache-Control":"no-store"}});}
  const [bots,runs,connectors,approvals,health]=await Promise.all([
- db("astra_bots?select=*&order=created_at.desc"),db("astra_runs?select=id,bot_id,status,prompt,created_at,calls_started,reported_tokens&order=created_at.desc&limit=50"),db("astra_connectors?select=id,provider,label,enabled,config,permissions&order=created_at.desc"),db("astra_approvals?select=id,connector_id,payload,payload_sha256,status,expires_at,created_at,result&order=created_at.desc&limit=50"),db("astra_worker_health?select=last_seen&id=eq.main")]);
+ db("astra_bots?select=*&order=created_at.desc"),db("astra_runs?select=id,bot_id,status,prompt,created_at,calls_started,reported_tokens&order=created_at.desc&limit=50"),db("astra_connectors?select=id,provider,label,enabled,config,permissions&order=created_at.desc"),db("astra_approvals?select=id,connector_id,payload,payload_sha256,status,expires_at,created_at,result&order=created_at.desc&limit=50"),db("astra_worker_health?select=last_seen&id=eq."+(process.env.CLOUD_WORKER_SECRET?"cloud":"main"))]);
  return Response.json({configured:true,bots,runs,connectors,approvals,health},{headers:{"Cache-Control":"no-store"}});
 }catch(e){return errorResponse(e);}}
 export async function POST(request:Request){try{

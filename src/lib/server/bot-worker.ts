@@ -40,6 +40,8 @@ export async function workRun(run:RunRow & {context:unknown}) {
  if(step.id==="final"&&error)await db(`astra_runs?id=eq.${run.id}&status=neq.cancelled`,{method:"PATCH",body:JSON.stringify({status:"failed"})});
 }
 export async function workerTick(){
+ // The cloud dispatcher owns scheduling and the daily reservation budget when paired.
+ if(process.env.CLOUD_WORKER_SECRET)return;
  await db("astra_worker_health?on_conflict=id",{method:"POST",headers:{Prefer:"resolution=merge-duplicates"},body:JSON.stringify({id:"main",last_seen:new Date().toISOString()})});
  await db("rpc/astra_schedule_bots",{method:"POST",body:"{}"});
  const runs=await db<(RunRow&{context:unknown})[]>("astra_runs?status=in.(queued,running)&order=created_at&limit=2");
