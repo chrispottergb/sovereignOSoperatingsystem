@@ -60,7 +60,7 @@ Production RAILWAY_BUILD_TOKEN was verified against the intended environment wit
 - Each sandbox uses 1 CPU / 2 GB, public-only isolated networking, and a ten-minute idle expiry. It receives only a short-lived job token, never provider, database, or Railway management credentials.
 - The Vercel proxy restricts model access to the selected engine/model, revokes access on cancellation/completion, and enforces an atomic call limit. Provider output is capped at 4096 tokens per request.
 - The worker runs available npm test/build scripts independently of the agent report, saves source and checks in private Supabase storage, then destroys the VM. Missing scripts are reported as not run. Source export is bounded to 60 text files / 1 MB; omissions are recorded.
-- New projects and council briefs are supported. Repository imports, local file imports, automatic publishing, merging and deployment are not enabled. Cloud builds do not yet have the local runner's post-build multi-model review.
+- New projects and council briefs are supported. Repository imports, local file imports, automatic publishing, merging and deployment are not enabled.
 - Pausing stops new jobs. Cancellation revokes model access immediately; an already running command can continue until its time limit. Interrupted work is uncertain and is not automatically retried.
 - Migration 202610140001_cloud_builds.sql and rollback-only queue/call-limit tests were applied through the authenticated Supabase Management API. No migration-history table exists here.
 
@@ -73,6 +73,40 @@ Live verification (2026-10-13):
 - These two setup jobs consume today's two-submission allowance; it resets at 00:00 UTC.
 - Vercel uses a newer npm version than the local runtime. The lockfile was repaired with npm 12.2.0 to include missing optional @emnapi entries; production clean installation and build passed.
 - Codex custom provider configuration follows https://developers.openai.com/codex/config-reference; explicit HTTP Responses routing avoids using the built-in provider's default WebSocket endpoint.
+
+## Cloud-build review loop
+
+Cloud builds now close the same review loop the local runner uses, server-side
+in the Vercel process (which holds the provider keys), over the SAVED artifacts:
+
+1. Sandbox phase (`running`): code → independent verify → one bounded correction
+   pass only when a verification check objectively `failed`
+   (`CLOUD_BUILD_CORRECTION_MINUTES`, default 1, max 2, 0 disables) → re-verify →
+   save source+checks → checkpoint to `reviewing`, then destroy the sandbox.
+2. Review phase (`reviewing`, no sandbox, resumable): a different provider from
+   the builder (codex→claude, claude→openai) reviews the saved source and the
+   independently recorded checks. The review is checkpointed, then the build's
+   synthesizer (else Claude) writes one final answer into `result.final`, shown
+   in the original chat. Terminal status is `completed` only if the recorded
+   checks pass; otherwise `failed`, with the failure stated in the final answer.
+
+Durability: the sandbox runs once; its result is checkpointed before teardown so
+review/final never re-enter a sandbox or re-bill coding. A provider failure in
+the review phase stops the job as `uncertain` with the completed review
+preserved; it is not automatically retried or re-billed. A dispatch that dies
+inside finalization (`stage='finalizing'`) is left for an explicit retry rather
+than auto-reclaimed. The review/final calls are separate from the sandbox's
+12-call job budget and add API credits.
+
+The correction window is a separate coding window on top of the initial two
+minutes; keep it short because the sandbox's job-scoped model token still lapses
+five minutes after the build started.
+
+This phase requires migration `202610150001_cloud_build_review.sql` (adds the
+`reviewing` status and the `astra_claim_cloud_build_review` RPC). Apply it
+through the authenticated Supabase Management API (`db query --linked`) before
+deploying; there is still no `supabase_migrations.schema_migrations` table, so
+do not `db push`.
 
 ## Recovery
 
