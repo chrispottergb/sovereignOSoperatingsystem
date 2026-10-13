@@ -6,7 +6,7 @@ The Railway `sovereign-cloud-dispatcher` cron runs every five minutes. It calls
 the scoped `/api/cloud-worker` endpoint on Vercel. The endpoint reserves one
 saved Orchestra/bot stage in Supabase, executes it, and saves its artifact.
 It does not depend on the owner's browser or PC. Main-chat council runs remain
-browser-driven; cloud coding and media generation are not enabled by this change.
+browser-driven. A separate cloud code-build queue is now implemented; media generation workers are separate.
 
 Owner controls: `/cloud`. Pause stops new reservations; an in-flight model call
 may complete. Stage cancellation and retry remain in Orchestra/Grokbot Studio.
@@ -52,23 +52,27 @@ enabled recurring bots at activation.
   `supabase_migrations.schema_migrations` table; do not blindly replay existing
   migration files with `db push`.
 
-## Cloud build work still required
+## Isolated cloud builds
 
-Railway sandbox provisioning and command execution were verified with a temporary
-VM: Node v24.21.0, Codex CLI 0.162.1, Claude Code 2.1.296. The VM was destroyed after
-the probe. No local coding login or provider key was transferred.
+Production RAILWAY_BUILD_TOKEN was verified against the intended environment without exposing its value. Codex or Claude Code can be selected in Orchestra or the build action attached to a council answer.
 
-Railway's authenticated CLI rejected `projectTokenCreate` with `Not Authorized`.
-An owner-created project token for this environment, saved server-side in Vercel
-Production as `RAILWAY_BUILD_TOKEN`, is required for unattended sandbox management.
-Never place it in a prompt, browser storage, generated project, or sandbox.
+- Separate queue: two submissions per UTC day, one running sandbox, at most two minutes of coding and 12 model requests per build. Claude Code honors a budget up to $1. These are initial conservative limits, not a provider-wide dollar cap.
+- Each sandbox uses 1 CPU / 2 GB, public-only isolated networking, and a ten-minute idle expiry. It receives only a short-lived job token, never provider, database, or Railway management credentials.
+- The Vercel proxy restricts model access to the selected engine/model, revokes access on cancellation/completion, and enforces an atomic call limit. Provider output is capped at 4096 tokens per request.
+- The worker runs available npm test/build scripts independently of the agent report, saves source and checks in private Supabase storage, then destroys the VM. Missing scripts are reported as not run. Source export is bounded to 60 text files / 1 MB; omissions are recorded.
+- New projects and council briefs are supported. Repository imports, local file imports, automatic publishing, merging and deployment are not enabled. Cloud builds do not yet have the local runner's post-build multi-model review.
+- Pausing stops new jobs. Cancellation revokes model access immediately; an already running command can continue until its time limit. Interrupted work is uncertain and is not automatically retried.
+- Migration 202610140001_cloud_builds.sql and rollback-only queue/call-limit tests were applied through the authenticated Supabase Management API. No migration-history table exists here.
 
-After that prerequisite: implement a separate capped build queue; create isolated
-sandboxes with private networking disabled; run the selected coding engine with
-job-scoped model access; independently run checks; persist downloadable source and
-reports; destroy sandboxes on completion/cancellation and recover interrupted
-jobs. Do not mark `cloudBuildsReady` true merely because a token exists. Verify a
-real build first. E2B is not required if the Railway sandbox route is used.
+Validation: 220 unit tests and desktop/mobile cloud selection and pause controls passed. Production deployment dpl_5LXPWkLdWqpRCE3r4aKGzZHWZRi9 is READY and aliased to the live site.
+
+Live verification (2026-10-13):
+- Codex job bc14499b-ac6f-479f-bcc4-933dca62d5d5: completed, three model requests, three source files, three independently executed tests passed. Artifact retrieval HTTP 200. Initial zero-call routing failure was explicitly retried after configuring the custom provider; its old diagnostic artifact is retained.
+- Claude Code job d1712416-352a-4129-9cfe-34d9a3b29bfa: completed, three model requests, three source files, three independently executed tests passed.
+- Neither fixture required a build script, reported as not_run. Railway sandbox list was empty after both jobs.
+- These two setup jobs consume today's two-submission allowance; it resets at 00:00 UTC.
+- Vercel uses a newer npm version than the local runtime. The lockfile was repaired with npm 12.2.0 to include missing optional @emnapi entries; production clean installation and build passed.
+- Codex custom provider configuration follows https://developers.openai.com/codex/config-reference; explicit HTTP Responses routing avoids using the built-in provider's default WebSocket endpoint.
 
 ## Recovery
 

@@ -23,6 +23,7 @@
     "lucide-react": "latest",
     "mammoth": "1.13.0",
     "next": "latest",
+    "railway": "3.15.0",
     "react": "latest",
     "react-dom": "latest",
     "react-markdown": "latest",

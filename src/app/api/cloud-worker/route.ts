@@ -2,6 +2,7 @@ import {z} from 'zod';
 import {auth,assertSameOrigin,constantEqual,readJsonLimited} from '@/lib/server/auth';
 import {db} from '@/lib/server/astra-store';
 import {cloudStatus,cloudTick} from '@/lib/server/cloud-worker';
+import {verifyCloudBuildAccess} from '@/lib/server/cloud-build-access';
 import {AppError,errorResponse} from '@/lib/server/errors';
 export const maxDuration=300;
 export async function GET(request:Request){try{await auth.resolve(request);return Response.json(await cloudStatus(),{headers:{'Cache-Control':'no-store'}});}catch(e){return errorResponse(e);}}
@@ -10,8 +11,9 @@ export async function POST(request:Request){try{
  if(bearer){
   const secret=process.env.CLOUD_WORKER_SECRET;
   if(!secret||!constantEqual(bearer,'Bearer '+secret))throw new AppError('FORBIDDEN','Invalid cloud worker credential.',403);
-  const parsed=z.object({action:z.enum(['tick','probe'])}).strict().safeParse(await readJsonLimited(request,1024));
+  const parsed=z.object({action:z.enum(['tick','probe','verify_build_access'])}).strict().safeParse(await readJsonLimited(request,1024));
   if(!parsed.success)throw new AppError('VALIDATION','Unknown cloud action.',400);const input=parsed.data;
+  if(input.action==='verify_build_access')return Response.json(await verifyCloudBuildAccess(),{headers:{'Cache-Control':'no-store'}});
   return Response.json(await cloudTick(input.action==='probe'));
  }
  assertSameOrigin(request);await auth.resolve(request);

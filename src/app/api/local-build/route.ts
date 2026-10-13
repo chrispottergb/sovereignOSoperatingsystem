@@ -1,3 +1,4 @@
+import {enqueueCloudBuild,listCloudBuilds,cloudBuildConfigured} from '@/lib/server/cloud-builds';
 import {z} from 'zod';
 import {randomUUID} from 'node:crypto';
 import {auth,assertSameOrigin,constantEqual,readJsonLimited} from '@/lib/server/auth';
@@ -14,7 +15,7 @@ const workerSchema=z.discriminatedUnion('action',[
  z.object({action:z.literal('finish'),id,claim:id,status:z.enum(['completed','failed']),result:z.record(z.unknown())}),
  z.object({action:z.literal('model'),id,claim:id,provider:z.enum(['openai','claude','perplexity','grok']),stage:z.enum(['answer','review','revise','final']),prompt:z.string().min(1).max(290000)}),
 ]);
-export async function GET(request:Request){try{await auth.resolve(request);const [jobs,runners]=await Promise.all([db('astra_local_jobs?select=id,input,status,stage,created_at,heartbeat_at,result&order=created_at.desc&limit=20'),db('astra_local_runner?select=last_seen,engines&id=eq.main')]);return Response.json({jobs,runners,cloudEnabled:false},{headers:{'Cache-Control':'no-store'}});}catch(e){return errorResponse(e);}}
+export async function GET(request:Request){try{await auth.resolve(request);const [jobs,runners]=await Promise.all([db('astra_local_jobs?select=id,input,status,stage,created_at,heartbeat_at,result&order=created_at.desc&limit=20'),db('astra_local_runner?select=last_seen,engines&id=eq.main')]);return Response.json({jobs:[...(jobs as unknown[]),...await listCloudBuilds() as unknown[]],runners,cloudEnabled:cloudBuildConfigured()},{headers:{'Cache-Control':'no-store'}});}catch(e){return errorResponse(e);}}
 export async function POST(request:Request){try{
  const bearer=request.headers.get('authorization');
  if(bearer){if(!process.env.WORKER_SECRET||!constantEqual(bearer,'Bearer '+process.env.WORKER_SECRET))throw new AppError('FORBIDDEN','Invalid runner credentials.',403);
@@ -27,9 +28,9 @@ export async function POST(request:Request){try{
  }
  assertSameOrigin(request);const principal=await auth.resolve(request);limiter.take('local-build:'+principal.id,10,60000);
  const body=await readJsonLimited(request,100000);
- const cancel=z.object({action:z.literal('cancel'),id}).strict().safeParse(body);if(cancel.success){await db(`astra_local_jobs?id=eq.${cancel.data.id}&status=in.(queued,running)`,{method:'PATCH',body:JSON.stringify({status:'cancelled',stage:'cancelled by owner'})});return Response.json({ok:true});}
+ const cancel=z.object({action:z.literal('cancel'),id}).strict().safeParse(body);if(cancel.success){if(cloudBuildConfigured())await db(`astra_cloud_builds?id=eq.${cancel.data.id}&status=in.(queued,running)`,{method:'PATCH',body:JSON.stringify({status:'cancelled',stage:'cancelled; active command stops at its time limit',token_hash:null})});await db(`astra_local_jobs?id=eq.${cancel.data.id}&status=in.(queued,running)`,{method:'PATCH',body:JSON.stringify({status:'cancelled',stage:'cancelled by owner'})});return Response.json({ok:true});}
  const parsed=z.object({...buildShape,requestId:id}).safeParse(body);if(!parsed.success)throw new AppError('VALIDATION','Check the build request and limits.',400);const {requestId,...input}=parsed.data;
- if(input.environment==='cloud')throw new AppError('CLOUD_DISABLED','Cloud execution is disabled by your choice. No project data was sent.',409);
+ if(input.environment==='cloud')return Response.json({id:await enqueueCloudBuild(input,requestId)});
  const old=await db<{id:string}[]>(`astra_local_jobs?request_id=eq.${requestId}&select=id`);if(old.length)return Response.json({id:old[0].id});
  const health=await db<{last_seen:string;engines:Record<string,boolean>}[]>('astra_local_runner?id=eq.main');if(!health[0]||Date.now()-Date.parse(health[0].last_seen)>90000)throw new AppError('RUNNER_OFFLINE','Start the local runner on your PC with npm run runner:local. Cloud remains disabled.',409);if(!health[0].engines[input.builder])throw new AppError('ENGINE_UNAVAILABLE','The selected coding CLI is not installed on the runner.',409);
  const job=randomUUID();await db('astra_local_jobs',{method:'POST',body:JSON.stringify({id:job,request_id:requestId,input})});return Response.json({id:job});

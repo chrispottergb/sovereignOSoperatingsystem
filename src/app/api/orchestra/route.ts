@@ -1,3 +1,4 @@
+import {cloudBuildConfigured} from '@/lib/server/cloud-builds';
 import {after} from "next/server";
 import {auth,assertSameOrigin,readJsonLimited} from "@/lib/server/auth";
 import {db,readArtifact} from "@/lib/server/astra-store";
@@ -14,7 +15,7 @@ export async function GET(request:Request){try{
  return Response.json({run,steps,answer:final?.output_path?await readArtifact(final.output_path):null,build:build?.output_path?await readArtifact(build.output_path):null},{headers:{"Cache-Control":"no-store"}});}
  const runs=await db("astra_runs?orchestration_version=eq.1&select=id,prompt,status,created_at,lane,calls_started,reported_tokens&order=created_at.desc&limit=50");
  const connectors=await db("astra_connectors?enabled=eq.true&select=id,label");
- return Response.json({hierarchy,runs,connectors,cloudBuildsReady:false},{headers:{"Cache-Control":"no-store"}});
+ return Response.json({hierarchy,runs,connectors,cloudBuildsReady:cloudBuildConfigured()},{headers:{"Cache-Control":"no-store"}});
 }catch(e){return errorResponse(e);}}
 export async function POST(request:Request){try{
  assertSameOrigin(request);await auth.resolve(request);
