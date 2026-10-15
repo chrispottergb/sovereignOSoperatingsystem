@@ -1,9 +1,10 @@
+import {sendAyaGmail} from './aya-gmail';
 import 'server-only';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {ayaInput,ayaBody} from '../aya-handoff';
 import {AppError} from './errors';
-export async function handoffToAya(raw:unknown,send:typeof fetch=fetch){
+export async function sendAyaResend(raw:unknown,send:typeof fetch=fetch){
  const input=ayaInput.parse(raw),key=process.env.RESEND_API_KEY?.trim(),from=process.env.AYA_FROM_EMAIL?.trim();
  if(!key||!from||!z.string().email().safeParse(from).success)throw new AppError('AYA_CONFIG','Configure RESEND_API_KEY and AYA_FROM_EMAIL before sending.',503);
  let response:Response;
@@ -14,3 +15,6 @@ export async function handoffToAya(raw:unknown,send:typeof fetch=fetch){
  if(!z.object({id:z.string().min(1)}).safeParse(data).success)throw new AppError('AYA_SEND_UNCERTAIN','Resend did not return an email identifier. Check the inbox before retrying.',502);
  return {status:'submitted' as const};
 }
+
+// Gmail is explicitly selected by Chris. Never fall back to a different sender.
+export const handoffToAya=sendAyaGmail;

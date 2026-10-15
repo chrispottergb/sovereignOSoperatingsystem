@@ -1,5 +1,5 @@
 import {it,expect,vi,afterEach} from 'vitest';
-import {handoffToAya} from '../src/lib/server/aya-handoff';
+import {sendAyaResend as handoffToAya} from '../src/lib/server/aya-handoff';
 import {ayaInput} from '../src/lib/aya-handoff';
 const input={task_name:'Test ping',action:'Confirm receipt only, no execution',destination:'Aya',content:'Bridge test from ChatGPT — please confirm receipt in this thread',timing:'now',approval:'draft only'};
 afterEach(()=>vi.unstubAllEnvs());
