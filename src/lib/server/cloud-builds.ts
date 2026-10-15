@@ -15,8 +15,12 @@ export function cloudBuildConfigured(){return Boolean(process.env.RAILWAY_BUILD_
 // and modelCalls are enforced in SQL; changing them needs a migration.
 export function cloudLimits(){
  const budget=Number(process.env.CLOUD_BUILD_CLAUDE_BUDGET_MAX||1);
+ // codingMinutes is ceilinged at 4 on purpose: astra_charge_build_model only
+ // authorizes a sandbox's model calls for 5 minutes after the build starts, so
+ // a longer single window would lose model access mid-run. Raising real coding
+ // time past this needs the per-stage lease refresh (see PRIORITY-2-staged-execution.md).
  return {dailyBuilds:2,modelCalls:12,
-  codingMinutes:boundedEnv('CLOUD_BUILD_MINUTES_MAX',2,1,10),
+  codingMinutes:boundedEnv('CLOUD_BUILD_MINUTES_MAX',2,1,4),
   correctionMinutes:boundedEnv('CLOUD_BUILD_CORRECTION_MINUTES',1,0,2),
   claudeBudgetUsd:Number.isFinite(budget)?Math.min(10,Math.max(0.1,budget)):1};
 }

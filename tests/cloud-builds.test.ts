@@ -75,10 +75,10 @@ it('stops as uncertain without re-billing when final synthesis fails',async()=>{
 });
 it('exposes default limits and never lets env silently raise spend past the ceiling',()=>{
  expect(cloudLimits()).toMatchObject({dailyBuilds:2,modelCalls:12,codingMinutes:2,correctionMinutes:1,claudeBudgetUsd:1});
- vi.stubEnv('CLOUD_BUILD_MINUTES_MAX','5');vi.stubEnv('CLOUD_BUILD_CLAUDE_BUDGET_MAX','4');
- expect(cloudLimits()).toMatchObject({codingMinutes:5,claudeBudgetUsd:4});
+ vi.stubEnv('CLOUD_BUILD_MINUTES_MAX','3');vi.stubEnv('CLOUD_BUILD_CLAUDE_BUDGET_MAX','4');
+ expect(cloudLimits()).toMatchObject({codingMinutes:3,claudeBudgetUsd:4});
  vi.stubEnv('CLOUD_BUILD_MINUTES_MAX','999');vi.stubEnv('CLOUD_BUILD_CLAUDE_BUDGET_MAX','9999');vi.stubEnv('CLOUD_BUILD_CORRECTION_MINUTES','9');
- expect(cloudLimits()).toMatchObject({codingMinutes:10,claudeBudgetUsd:10,correctionMinutes:2});
+ expect(cloudLimits()).toMatchObject({codingMinutes:4,claudeBudgetUsd:10,correctionMinutes:2});
 });
 it('recovers an uncertain build with saved work by resuming review (no sandbox, no re-bill)',async()=>{
  vi.stubEnv('RAILWAY_BUILD_TOKEN','t');
