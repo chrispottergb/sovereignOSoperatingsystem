@@ -6,10 +6,10 @@ Active MCP tool: handoff_to_aya. Gmail replaces Resend at Chris's request. No au
 
 Open https://sovereign-ai-workspace-zeta.vercel.app/aya after unlocking the workspace.
 1. Enable Gmail API in a Google Cloud project.
-2. Configure Google Auth Platform audience/branding. Add drpotterbeatz@gmail.com as a test user if Testing.
+2. Configure Google Auth Platform audience/branding. Add chrispottergb@gmail.com as a test user if Testing.
 3. Create a Web application OAuth client with exact redirect https://sovereign-ai-workspace-zeta.vercel.app/api/aya-gmail/callback.
 4. Save GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in Vercel Production, then redeploy. Never paste secrets in chat.
-5. Click Connect Gmail and authorize drpotterbeatz@gmail.com. Only gmail.send and OpenID email identity are requested. Inbox reading is not authorized.
+5. Click Connect Gmail and authorize chrispottergb@gmail.com. Only gmail.send and OpenID email identity are requested. Inbox reading is not authorized.
 6. Click Send one test ping once. Connection alone never sends email. Google Testing apps may require reconnecting after seven days.
 
 ## Implementation
@@ -18,7 +18,7 @@ Owner session and same-origin POST protect authorization initiation. OAuth state
 
 The MCP uses SOVEREIGN_ORIGIN and WORKER_SECRET to call /api/mcp-model. Google secrets stay on Vercel; the refresh token stays encrypted in Supabase. Restart an existing MCP process after updating code to discover the tool.
 
-Sender, recipient and Reply-To are fixed to drpotterbeatz@gmail.com. Subject is [FOR AYA] followed by task_name. UTF-8 MIME body preserves ACTION, DESTINATION, CONTENT, TIMING (timezone America/Chicago), APPROVAL. A successful Gmail acknowledgment returns exactly {"status":"submitted"}; it does not mean delivered, read, executed, or completed. Aya must reply in the same thread with proof. No inbox polling or automatic reply verification is implemented.
+Sender and Reply-To are chrispottergb@gmail.com. Aya recipient remains drpotterbeatz@gmail.com. Subject is [FOR AYA] followed by task_name. UTF-8 MIME body preserves ACTION, DESTINATION, CONTENT, TIMING (timezone America/Chicago), APPROVAL. A successful Gmail acknowledgment returns exactly {"status":"submitted"}; it does not mean delivered, read, executed, or completed. Aya must reply in the same thread with proof. No inbox polling or automatic reply verification is implemented.
 
 No automatic send retries. If submission is uncertain, inspect Gmail Sent and the inbox before invoking again. Separate deliberate tool calls are separate sends. UI prevents repeating the ping during that page session, not across page reloads.
 
@@ -29,3 +29,5 @@ This branch preserves the deployed f635562 baseline plus the Aya bridge. Claude'
 Official references:
 https://developers.google.com/workspace/gmail/api/auth/web-server
 https://developers.google.com/identity/protocols/oauth2/web-server
+
+Sender changed at Chris's request. Migration 202610150003_aya_sender.sql preserves any previous credential row but requires the new sender for future writes; application status and sending reject old-account credentials. Google consent is still required.
