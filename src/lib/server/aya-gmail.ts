@@ -6,7 +6,7 @@ import {seal,unseal} from './connector-hub';
 import {constantEqual} from './auth';
 import {AppError} from './errors';
 export const AYA_GMAIL='chrispottergb@gmail.com';
-export const AYA_RECIPIENT='drpotterbeatz@gmail.com';
+export const AYA_RECIPIENT='chrispottergb@gmail.com';
 export const GMAIL_SCOPE='https://www.googleapis.com/auth/gmail.send';
 export const GMAIL_COOKIE='__Host-aya_gmail_oauth';
 const origin='https://sovereign-ai-workspace-zeta.vercel.app';

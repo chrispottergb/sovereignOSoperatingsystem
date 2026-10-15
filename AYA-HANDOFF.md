@@ -18,7 +18,7 @@ Owner session and same-origin POST protect authorization initiation. OAuth state
 
 The MCP uses SOVEREIGN_ORIGIN and WORKER_SECRET to call /api/mcp-model. Google secrets stay on Vercel; the refresh token stays encrypted in Supabase. Restart an existing MCP process after updating code to discover the tool.
 
-Sender and Reply-To are chrispottergb@gmail.com. Aya recipient remains drpotterbeatz@gmail.com. Subject is [FOR AYA] followed by task_name. UTF-8 MIME body preserves ACTION, DESTINATION, CONTENT, TIMING (timezone America/Chicago), APPROVAL. A successful Gmail acknowledgment returns exactly {"status":"submitted"}; it does not mean delivered, read, executed, or completed. Aya must reply in the same thread with proof. No inbox polling or automatic reply verification is implemented.
+Sender and Reply-To are chrispottergb@gmail.com. Aya recipient is chrispottergb@gmail.com. Subject is [FOR AYA] followed by task_name. UTF-8 MIME body preserves ACTION, DESTINATION, CONTENT, TIMING (timezone America/Chicago), APPROVAL. A successful Gmail acknowledgment returns exactly {"status":"submitted"}; it does not mean delivered, read, executed, or completed. Aya must reply in the same thread with proof. No inbox polling or automatic reply verification is implemented.
 
 No automatic send retries. If submission is uncertain, inspect Gmail Sent and the inbox before invoking again. Separate deliberate tool calls are separate sends. UI prevents repeating the ping during that page session, not across page reloads.
 
