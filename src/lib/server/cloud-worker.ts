@@ -1,5 +1,5 @@
 import 'server-only';
-import {runCloudBuildTick,cloudBuildConfigured} from './cloud-builds';
+import {runCloudBuildTick,cloudBuildConfigured,cloudLimits} from './cloud-builds';
 import {db} from './astra-store';
 import {workRun} from './bot-worker';
 import type {RunRow} from '../bots';
@@ -14,7 +14,7 @@ export async function cloudStatus(){
  return {configured:Boolean(process.env.CLOUD_WORKER_SECRET),enabled:settings[0]?.enabled??false,
   online:Boolean(lastSeen&&Date.now()-Date.parse(lastSeen)<660000),lastSeen,
   dailySteps:settings[0]?.daily_steps??24,stepsReservedToday:dispatches.filter(d=>d.created_at.slice(0,10)===new Date().toISOString().slice(0,10)).length,
-  dispatches:dispatches.slice(0,20),cloudBuildsReady:cloudBuildConfigured(),
+  dispatches:dispatches.slice(0,20),cloudBuildsReady:cloudBuildConfigured(),buildLimits:cloudLimits(),
   capabilities:['saved_orchestra_workflows','bot_workflows'],
   limitations:['Main chat still runs in the browser.','Cloud builds create new projects; repository imports and automatic deployment are not enabled.','Step limits are not a dollar spending cap.']};
 }

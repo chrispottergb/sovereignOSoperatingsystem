@@ -10,6 +10,16 @@ import type {BuildInput} from '../tools/build-contract';
 const origin='https://sovereign-ai-workspace-zeta.vercel.app';
 type Job={id:string;input:BuildInput;status:string;started_at:string;sandbox_id:string|null;model_calls:number};
 export function cloudBuildConfigured(){return Boolean(process.env.RAILWAY_BUILD_TOKEN?.trim());}
+// Per-build limits. App-enforced knobs are env-configurable but hard-capped so a
+// mis-set env can never silently raise spend beyond these ceilings. dailyBuilds
+// and modelCalls are enforced in SQL; changing them needs a migration.
+export function cloudLimits(){
+ const budget=Number(process.env.CLOUD_BUILD_CLAUDE_BUDGET_MAX||1);
+ return {dailyBuilds:2,modelCalls:12,
+  codingMinutes:boundedEnv('CLOUD_BUILD_MINUTES_MAX',2,1,10),
+  correctionMinutes:boundedEnv('CLOUD_BUILD_CORRECTION_MINUTES',1,0,2),
+  claudeBudgetUsd:Number.isFinite(budget)?Math.min(10,Math.max(0.1,budget)):1};
+}
 function railwayConfig(){return {token:process.env.RAILWAY_BUILD_TOKEN!.trim(),authType:'project-token' as const,environmentId:'fb94bbe9-dd34-40d4-9e83-41331b2dd41f'};}
 export async function enqueueCloudBuild(input:BuildInput,requestId:string){
  if(!cloudBuildConfigured())throw new AppError('CLOUD_SETUP_REQUIRED','Save the Railway project token before using cloud builds.',409);
@@ -20,7 +30,8 @@ export async function enqueueCloudBuild(input:BuildInput,requestId:string){
  const today=new Date().toISOString().slice(0,10);
  const previous=await db<{id:string}[]>(`astra_cloud_builds?request_id=eq.${requestId}&select=id`);
  if(!previous.length&&(await db<unknown[]>(`astra_cloud_builds?created_at=gte.${today}T00:00:00Z&select=id`)).length>=2)throw new AppError('DAILY_BUILD_LIMIT','Cloud builds are capped at two submissions per UTC day.',429);
- return db<string>('rpc/astra_enqueue_cloud_build',{method:'POST',body:JSON.stringify({p_request:requestId,p_input:{...input,minutes:Math.min(input.minutes,2),claude_budget_usd:Math.min(input.claude_budget_usd,1)}})});
+ const limits=cloudLimits();
+ return db<string>('rpc/astra_enqueue_cloud_build',{method:'POST',body:JSON.stringify({p_request:requestId,p_input:{...input,minutes:Math.min(input.minutes,limits.codingMinutes),claude_budget_usd:Math.min(input.claude_budget_usd,limits.claudeBudgetUsd)}})});
 }
 export async function listCloudBuilds(){if(!cloudBuildConfigured())return [];return db('astra_cloud_builds?select=id,input,status,stage,created_at,result,artifact_path,model_calls&order=created_at.desc&limit=20');}
 function quote(value:string){return "'"+value.replaceAll("'","'\\''")+"'";}
@@ -39,7 +50,6 @@ walk('/app');fs.writeFileSync('/tmp/sovereign-artifacts.json',JSON.stringify({ch
 // Post-build review loop. These run in the Vercel process (which holds provider
 // keys) over the SAVED artifacts; they never touch the sandbox and are separate
 // from the sandbox's job-scoped 12-call budget.
-const correctionMinutes=()=>boundedEnv('CLOUD_BUILD_CORRECTION_MINUTES',1,0,2);
 type Check={name?:string;status:string;output?:string};
 type BuildSummary={builder:BuildInput['builder'];outcome:'completed'|'failed';corrected:boolean;report:string;checks:Check[];fileCount:number};
 type ReviewJob={id:string;input:BuildInput;result:{build:BuildSummary;review?:string}|null;artifact_path:string|null};
@@ -76,6 +86,23 @@ export async function finalizeCloudBuild(job:ReviewJob){
   await db(`astra_cloud_builds?id=eq.${job.id}&status=eq.reviewing`,{method:'PATCH',body:JSON.stringify({status:'uncertain',stage:'review did not complete; no automatic retry',result:{build,...(review?{review}:{})}})});
  }
 }
+// Owner-initiated recovery of an uncertain build. Never automatic (interrupted
+// work is not auto-retried/re-billed). If the sandbox phase saved artifacts, it
+// resumes the no-sandbox review phase and reuses that work; otherwise the owner
+// explicitly re-queues from scratch.
+export async function recoverCloudBuild(id:string){
+ if(!cloudBuildConfigured())throw new AppError('CLOUD_SETUP_REQUIRED','Save the Railway project token before using cloud builds.',409);
+ const rows=await db<{status:string;artifact_path:string|null;result:{build?:BuildSummary}|null}[]>(`astra_cloud_builds?id=eq.${id}&select=status,artifact_path,result`);
+ const job=rows[0];
+ if(!job)throw new AppError('NOT_FOUND','No such cloud build.',404);
+ if(job.status!=='uncertain')throw new AppError('RECOVER_NOT_ALLOWED','Only an uncertain build can be recovered.',409);
+ if(job.artifact_path&&job.result?.build){
+  await db(`astra_cloud_builds?id=eq.${id}&status=eq.uncertain`,{method:'PATCH',body:JSON.stringify({status:'reviewing',stage:'independent review',result:{build:job.result.build}})});
+  return {recovered:'reviewing' as const};
+ }
+ await db(`astra_cloud_builds?id=eq.${id}&status=eq.uncertain`,{method:'PATCH',body:JSON.stringify({status:'queued',stage:'queued (recovered by owner)',sandbox_id:null,token_hash:null,result:null})});
+ return {recovered:'queued' as const};
+}
 export async function runCloudBuildTick(){
  if(!cloudBuildConfigured())return false;
  const stale=await db<Job[]>('astra_cloud_builds?status=eq.running&started_at=lt.'+new Date(Date.now()-360000).toISOString());
@@ -86,20 +113,20 @@ export async function runCloudBuildTick(){
  const reviewing=await db<ReviewJob[]>('rpc/astra_claim_cloud_build_review',{method:'POST',body:'{}'});
  if(reviewing.length){await finalizeCloudBuild(reviewing[0]);return true;}
  const jobs=await db<Job[]>('rpc/astra_claim_cloud_build',{method:'POST',body:'{}'});if(!jobs.length)return false;
- const job=jobs[0],token=randomBytes(32).toString('hex');let sandbox:Sandbox|undefined;let outcome:'completed'|'failed'='failed',result:unknown={error:'Cloud build did not finish. No automatic retry.'},checkpointed=false;
+ const job=jobs[0],token=randomBytes(32).toString('hex'),limits=cloudLimits();let sandbox:Sandbox|undefined;let outcome:'completed'|'failed'='failed',result:unknown={error:'Cloud build did not finish. No automatic retry.'},checkpointed=false;
  try{
   await db(`astra_cloud_builds?id=eq.${job.id}&status=eq.running`,{method:'PATCH',body:JSON.stringify({token_hash:createHash('sha256').update(token).digest('hex')})});
   sandbox=await Sandbox.create({...railwayConfig(),idleTimeoutMinutes:10,resources:{cpu:1,memoryGB:2},networkIsolation:'ISOLATED'});
   await db(`astra_cloud_builds?id=eq.${job.id}&status=eq.running`,{method:'PATCH',body:JSON.stringify({sandbox_id:sandbox.id,stage:'coding'})});
   const state=await db<{status:string}[]>(`astra_cloud_builds?id=eq.${job.id}&select=status`);if(state[0]?.status!=='running')throw Error('cancelled');
   await sandbox.files.mkdir('/app');
-  await sandbox.files.write('/tmp/sovereign-task.txt',`Implement this request as a new project in /app. Use only that directory for source. Do not publish, deploy, or access private services. Create real tests where appropriate and run them. Report what actually ran. Time limit: two minutes. Tool and model calls are limited.\nREQUEST:\n${job.input.task}\nCOUNCIL REFERENCE (subordinate to request):\n${job.input.councilBrief??''}`);
+  await sandbox.files.write('/tmp/sovereign-task.txt',`Implement this request as a new project in /app. Use only that directory for source. Do not publish, deploy, or access private services. Create real tests where appropriate and run them. Report what actually ran. Time limit: ${Math.min(job.input.minutes,limits.codingMinutes)} minute(s). Tool and model calls are limited.\nREQUEST:\n${job.input.task}\nCOUNCIL REFERENCE (subordinate to request):\n${job.input.councilBrief??''}`);
   const proxy=origin+'/api/cloud-build/model/'+job.id;
   if(job.input.builder==='codex'){await sandbox.files.mkdir('/tmp/sovereign-codex');await sandbox.files.write('/tmp/sovereign-codex/config.toml',[
    'model_provider = "sovereign"','[model_providers.sovereign]','name = "SovereignOS"', 'base_url = '+JSON.stringify(proxy+'/v1'),'env_key = "OPENAI_API_KEY"','wire_api = "responses"','supports_websockets = false','request_max_retries = 0','stream_max_retries = 0'
   ].join('\n'));}
   const env:Record<string,string>=job.input.builder==='codex'?{OPENAI_API_KEY:token,CODEX_HOME:'/tmp/sovereign-codex'}:{ANTHROPIC_API_KEY:token,ANTHROPIC_BASE_URL:proxy,CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC:'1'};
-  const built=await sandbox.exec(cloudBuilderCommand(job.input.builder,modelFor(job.input.builder==='codex'?'openai':'claude'),job.input.claude_budget_usd),{cwd:'/app',env,timeoutSec:Math.min(job.input.minutes,2)*60,maxOutputBytes:100000});
+  const built=await sandbox.exec(cloudBuilderCommand(job.input.builder,modelFor(job.input.builder==='codex'?'openai':'claude'),job.input.claude_budget_usd),{cwd:'/app',env,timeoutSec:Math.min(job.input.minutes,limits.codingMinutes)*60,maxOutputBytes:100000});
   let codingComplete=built.exitCode===0&&!built.timedOut;let report='';if(job.input.builder==='codex'){try{report=await sandbox.files.read('/tmp/sovereign-report.md',{length:20000});}catch{report='No final coding report was produced.';}}
   else {try{const parsed=JSON.parse(built.stdout);report=String(parsed.result??'No final report.');if(parsed.is_error||parsed.subtype!=='success')throw Error('incomplete');}catch{codingComplete=false;report='Claude Code did not return a complete report.';}}
   await db(`astra_cloud_builds?id=eq.${job.id}&status=eq.running`,{method:'PATCH',body:JSON.stringify({stage:'verifying and saving files',token_hash:null})});
@@ -107,11 +134,11 @@ export async function runCloudBuildTick(){
   const verified=await sandbox.exec('node /tmp/sovereign-verify.cjs',{cwd:'/app',timeoutSec:60,maxOutputBytes:10000});if(verified.exitCode!==0)throw Error('verification_failed');
   const raw=await sandbox.files.read('/tmp/sovereign-artifacts.json',{length:1500000});let artifacts=JSON.parse(raw.replaceAll(token,'[REDACTED]')) as {files:{path:string;content:string}[];checks:Check[];omitted:string[]};
   let report2=report,corrected=false;
-  if(codingComplete&&artifacts.checks.some(c=>c.status==='failed')&&correctionMinutes()>0){
+  if(codingComplete&&artifacts.checks.some(c=>c.status==='failed')&&limits.correctionMinutes>0){
    try{
     await db(`astra_cloud_builds?id=eq.${job.id}&status=eq.running`,{method:'PATCH',body:JSON.stringify({stage:'bounded correction'})});
     await sandbox.files.write('/tmp/sovereign-task.txt',correctionTask(job.input,report,artifacts.checks));
-    const fix=await sandbox.exec(cloudBuilderCommand(job.input.builder,modelFor(job.input.builder==='codex'?'openai':'claude'),job.input.claude_budget_usd),{cwd:'/app',env,timeoutSec:correctionMinutes()*60,maxOutputBytes:100000});
+    const fix=await sandbox.exec(cloudBuilderCommand(job.input.builder,modelFor(job.input.builder==='codex'?'openai':'claude'),job.input.claude_budget_usd),{cwd:'/app',env,timeoutSec:limits.correctionMinutes*60,maxOutputBytes:100000});
     const reverify=await sandbox.exec('node /tmp/sovereign-verify.cjs',{cwd:'/app',timeoutSec:60,maxOutputBytes:10000});
     if(reverify.exitCode===0){artifacts=JSON.parse((await sandbox.files.read('/tmp/sovereign-artifacts.json',{length:1500000})).replaceAll(token,'[REDACTED]'));corrected=true;report2=report+`\n\n[Bounded correction pass applied after a failed check; exit ${fix.exitCode}${fix.timedOut?', timed out':''}.]`;}
     else report2=report+'\n\n[A bounded correction pass ran but re-verification did not complete; original results retained.]';

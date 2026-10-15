@@ -3,7 +3,7 @@ const mocks=vi.hoisted(()=>({db:vi.fn(),store:vi.fn(),read:vi.fn(),readArtifact:
 vi.mock('../src/lib/server/astra-store',()=>({db:mocks.db,storeArtifact:mocks.store,readArtifact:mocks.readArtifact}));
 vi.mock('../src/lib/server/model-completion',()=>({completion:()=>mocks.complete}));
 vi.mock('railway',()=>({Sandbox:{create:mocks.create},SandboxNotFoundError:class extends Error{}}));
-import {runCloudBuildTick,finalizeCloudBuild,enqueueCloudBuild,cloudBuilderCommand} from '../src/lib/server/cloud-builds';
+import {runCloudBuildTick,finalizeCloudBuild,recoverCloudBuild,cloudLimits,enqueueCloudBuild,cloudBuilderCommand} from '../src/lib/server/cloud-builds';
 afterEach(()=>{vi.unstubAllEnvs();vi.resetAllMocks();});
 it('does not touch the build queue without sandbox configuration',async()=>{vi.stubEnv('RAILWAY_BUILD_TOKEN','');expect(await runCloudBuildTick()).toBe(false);expect(mocks.db).not.toHaveBeenCalled();});
 it('never imports local file paths into cloud jobs',async()=>{vi.stubEnv('RAILWAY_BUILD_TOKEN','test');await expect(enqueueCloudBuild({task:'build',builder:'codex',environment:'cloud',files:['private.txt'],minutes:2,claude_budget_usd:1},'id')).rejects.toMatchObject({code:'CLOUD_FILES_UNAVAILABLE'});expect(mocks.db).not.toHaveBeenCalled();});
@@ -72,4 +72,31 @@ it('stops as uncertain without re-billing when final synthesis fails',async()=>{
  mocks.complete.mockResolvedValueOnce({response:'the review',model:'m',tokens:{}}).mockRejectedValueOnce(Error('provider down'));
  await finalizeCloudBuild({id:'52345678-1234-4234-9234-123456789abc',input:{task:'x',builder:'codex'} as never,result:{build} as never,artifact_path:'cloud-builds/x/y.json'});
  const last=mocks.db.mock.calls.at(-1)?.[1].body;expect(last).toContain('"status":"uncertain"');expect(last).toContain('"review":"the review"'); // completed review preserved for an explicit retry
+});
+it('exposes default limits and never lets env silently raise spend past the ceiling',()=>{
+ expect(cloudLimits()).toMatchObject({dailyBuilds:2,modelCalls:12,codingMinutes:2,correctionMinutes:1,claudeBudgetUsd:1});
+ vi.stubEnv('CLOUD_BUILD_MINUTES_MAX','5');vi.stubEnv('CLOUD_BUILD_CLAUDE_BUDGET_MAX','4');
+ expect(cloudLimits()).toMatchObject({codingMinutes:5,claudeBudgetUsd:4});
+ vi.stubEnv('CLOUD_BUILD_MINUTES_MAX','999');vi.stubEnv('CLOUD_BUILD_CLAUDE_BUDGET_MAX','9999');vi.stubEnv('CLOUD_BUILD_CORRECTION_MINUTES','9');
+ expect(cloudLimits()).toMatchObject({codingMinutes:10,claudeBudgetUsd:10,correctionMinutes:2});
+});
+it('recovers an uncertain build with saved work by resuming review (no sandbox, no re-bill)',async()=>{
+ vi.stubEnv('RAILWAY_BUILD_TOKEN','t');
+ const row={status:'uncertain',artifact_path:'cloud-builds/x/y.json',result:{build:{builder:'codex',outcome:'completed',corrected:false,report:'r',checks:[{status:'passed'}],fileCount:1}}};
+ mocks.db.mockImplementation(async(p:string)=>p.includes('select=status,artifact_path,result')?[row]:[]);
+ expect(await recoverCloudBuild('a2345678-1234-4234-9234-123456789abc')).toEqual({recovered:'reviewing'});
+ const last=mocks.db.mock.calls.at(-1)!;expect(last[0]).toContain('status=eq.uncertain');expect(last[1].body).toContain('"status":"reviewing"');
+});
+it('recovers an uncertain build without saved work by re-queuing',async()=>{
+ vi.stubEnv('RAILWAY_BUILD_TOKEN','t');
+ mocks.db.mockImplementation(async(p:string)=>p.includes('select=status,artifact_path,result')?[{status:'uncertain',artifact_path:null,result:null}]:[]);
+ expect(await recoverCloudBuild('b2345678-1234-4234-9234-123456789abc')).toEqual({recovered:'queued'});
+ expect(mocks.db.mock.calls.at(-1)?.[1].body).toContain('"status":"queued"');
+});
+it('refuses to recover a build that is not uncertain, and refuses a missing one',async()=>{
+ vi.stubEnv('RAILWAY_BUILD_TOKEN','t');
+ mocks.db.mockImplementation(async(p:string)=>p.includes('select=status,artifact_path,result')?[{status:'completed',artifact_path:null,result:null}]:[]);
+ await expect(recoverCloudBuild('c2345678-1234-4234-9234-123456789abc')).rejects.toMatchObject({code:'RECOVER_NOT_ALLOWED'});
+ mocks.db.mockImplementation(async()=>[]);
+ await expect(recoverCloudBuild('d2345678-1234-4234-9234-123456789abc')).rejects.toMatchObject({code:'NOT_FOUND'});
 });

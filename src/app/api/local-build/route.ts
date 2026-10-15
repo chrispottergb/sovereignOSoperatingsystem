@@ -1,4 +1,4 @@
-import {enqueueCloudBuild,listCloudBuilds,cloudBuildConfigured} from '@/lib/server/cloud-builds';
+import {enqueueCloudBuild,listCloudBuilds,cloudBuildConfigured,recoverCloudBuild} from '@/lib/server/cloud-builds';
 import {z} from 'zod';
 import {randomUUID} from 'node:crypto';
 import {auth,assertSameOrigin,constantEqual,readJsonLimited} from '@/lib/server/auth';
@@ -29,6 +29,7 @@ export async function POST(request:Request){try{
  assertSameOrigin(request);const principal=await auth.resolve(request);limiter.take('local-build:'+principal.id,10,60000);
  const body=await readJsonLimited(request,100000);
  const cancel=z.object({action:z.literal('cancel'),id}).strict().safeParse(body);if(cancel.success){if(cloudBuildConfigured())await db(`astra_cloud_builds?id=eq.${cancel.data.id}&status=in.(queued,running)`,{method:'PATCH',body:JSON.stringify({status:'cancelled',stage:'cancelled; active command stops at its time limit',token_hash:null})});await db(`astra_local_jobs?id=eq.${cancel.data.id}&status=in.(queued,running)`,{method:'PATCH',body:JSON.stringify({status:'cancelled',stage:'cancelled by owner'})});return Response.json({ok:true});}
+ const retry=z.object({action:z.literal('retry'),id}).strict().safeParse(body);if(retry.success)return Response.json(await recoverCloudBuild(retry.data.id));
  const parsed=z.object({...buildShape,requestId:id}).safeParse(body);if(!parsed.success)throw new AppError('VALIDATION','Check the build request and limits.',400);const {requestId,...input}=parsed.data;
  if(input.environment==='cloud')return Response.json({id:await enqueueCloudBuild(input,requestId)});
  const old=await db<{id:string}[]>(`astra_local_jobs?request_id=eq.${requestId}&select=id`);if(old.length)return Response.json({id:old[0].id});
