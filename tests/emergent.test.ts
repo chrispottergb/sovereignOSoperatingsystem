@@ -1,0 +1,17 @@
+import {beforeEach,expect,it,vi} from 'vitest';
+const mocks=vi.hoisted(()=>({resolve:vi.fn(),origin:vi.fn(),save:vi.fn(),read:vi.fn()}));
+vi.mock('../src/lib/server/auth',()=>({auth:{resolve:mocks.resolve},assertSameOrigin:mocks.origin,readJsonLimited:(r:Request)=>r.json()}));
+vi.mock('../src/lib/server/astra-store',()=>({storeArtifact:mocks.save,readArtifact:mocks.read}));
+import {POST,GET} from '../src/app/api/emergent/route';
+import {AppError} from '../src/lib/server/errors';
+import {emergentPacket,emergentReview} from '../src/lib/emergent';
+import {orchestraInput,orchestraPlan} from '../src/lib/orchestra/plan';
+const input={task:'Build a calendar',councilBrief:'Keep unresolved timezone questions visible.',acceptance:'Verify DST transitions.'};
+const request=()=>new Request('https://example.test/api/emergent',{method:'POST',body:JSON.stringify(input)});
+beforeEach(()=>{vi.resetAllMocks();});
+it('saves a private handoff without claiming external submission',async()=>{const r=await POST(request()),d=await r.json();expect(r.status).toBe(200);expect(d.submitted).toBe(false);expect(d.status).toBe('prepared');expect(mocks.save).toHaveBeenCalledWith(`emergent/${d.id}.json`,expect.any(String));expect(d.input).toEqual(input);});
+it('rejects unauthenticated writes before storage',async()=>{mocks.resolve.mockRejectedValue(new AppError('FORBIDDEN','Unlock workspace',401));expect((await POST(request())).status).toBe(401);expect(mocks.save).not.toHaveBeenCalled();});
+it('rejects cross-origin writes',async()=>{mocks.origin.mockImplementation(()=>{throw new AppError('FORBIDDEN','Invalid origin',403);});expect((await POST(request())).status).toBe(403);expect(mocks.save).not.toHaveBeenCalled();});
+it('authenticates saved brief reads',async()=>{mocks.resolve.mockRejectedValue(new AppError('FORBIDDEN','Unlock workspace',401));const response=await GET(new Request('https://example.test/api/emergent?id=00000000-0000-4000-8000-000000000001'));expect(response.status).toBe(401);expect(mocks.read).not.toHaveBeenCalled();});
+it('keeps original requirements and dissent through the handoff and review',()=>{for(const text of [emergentPacket(input),emergentReview(input,'Tests not run')]){expect(text).toContain(input.task);expect(text).toContain(input.councilBrief);expect(text).toContain(input.acceptance);}expect(emergentReview(input,'Tests not run')).toContain('untrusted claims');});
+it('reviews through all four providers without dispatching another builder',()=>{const plan=orchestraPlan(orchestraInput.parse({prompt:emergentReview(input,'Tests not run'),intent:'writing',research:true,requestId:'00000000-0000-4000-8000-000000000001'}));expect(new Set(plan.steps.map(s=>s.provider))).toEqual(new Set(['perplexity','claude','grok','openai']));expect(plan.steps.some(s=>s.executor)).toBe(false);expect(plan.steps.at(-1)?.id).toBe('final');});
