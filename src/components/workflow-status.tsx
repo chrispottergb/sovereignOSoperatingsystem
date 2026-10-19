@@ -23,9 +23,10 @@ export function WorkflowStatus({ turn, busy, onStop, onRetry }: { turn: Turn; bu
   const extraTokens=extras.reduce((n,x)=>n+(x?.usage.inputTokens||0)+(x?.usage.outputTokens||0),0);
   const tokens = extraTokens + measured.reduce((n,a) => n + (a.usage?.inputTokens || 0) + (a.usage?.outputTokens || 0), 0);
   if (turn.council.protocol === "chat") return <section className="council-status workflow-summary" role="status" aria-label="Synthesis progress">
-    <strong>{active ? "Working on your answer" : turn.council.status === "complete" ? "Research and review complete" : "Workflow paused"}</strong><p>{turn.council.message}</p>
+    <strong>{active ? "Working on your answer" : turn.council.status === "complete" ? "Final outcome ready" : "Workflow paused"}</strong><p>{turn.council.message}</p>
     {turn.orchestration && <details><summary>Symbiosis plan and specialist prompts</summary><p>{turn.orchestration.plan.objective}</p><p>Muse: {turn.orchestration.plan.muse.reason}</p><p>Grokbot: {turn.orchestration.plan.grokbot.reason}</p>{turn.orchestration.plan.muse.needed&&<p>Muse prompt: {turn.orchestration.plan.muse.prompt}</p>}{turn.orchestration.plan.grokbot.needed&&<p>Grokbot prompt: {turn.orchestration.plan.grokbot.prompt}</p>}<p>{turn.orchestration.plan.limitations.join(' ')}</p><p>Specialist outputs feed the shared council answer. No publishing or deployment is performed by these calls.</p></details>}
     {active && <button className="secondary-button" onClick={onStop}>Stop</button>}
+    {turn.synthesis && <a className="secondary-button" href={`#final-${turn.id}`}>Jump to final outcome</a>}
     {turn.council.status === "complete" && <button className="secondary-button" disabled={busy} onClick={()=>onRetry(true)}>Regenerate final outcome</button>}
     {!active && ["error","cancelled"].includes(turn.council.status) && <button className="secondary-button" disabled={busy || retryAt > now} onClick={()=>onRetry(true)}>{retryAt > now ? "Waiting for provider cooldown" : "Continue with saved work"}</button>}
     {(!!attempts.length||extras.length>0) && <details><summary>Usage · {attempts.length} council requests · {extras.length} saved specialist results · {tokens.toLocaleString()} reported tokens</summary><p>Missing usage is unknown, including failed specialist calls. Provider search fees may apply.</p></details>}

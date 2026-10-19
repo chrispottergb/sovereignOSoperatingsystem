@@ -35,7 +35,7 @@ export async function runChatWorkflow(o: {
  update("planning",`${editor === "openai" ? "GPT Astra" : "Claude Fable 5.1"} is integrating the evidence, reviews and corrected work into one deliverable…`);
  await run(editor,"resolve");
  if(signal.aborted) return;
- if(!usable(read()?.synthesis)) { update("error","The final answer did not finish. Retry to reuse the saved research and reviews."); return; }
+ if(!usable(read()?.synthesis)) { update("error",read()?.synthesis?.error || "The final answer did not finish. Its partial response is shown below. Retry to reuse the saved research and reviews."); return; }
  const missing=providerIds.filter(id=>!usable(read()?.answers[id]) || !usable(read()?.reviews?.[id]));
  update("complete",missing.length ? `Answer ready with limited contributions from ${missing.join(", ")}. Review details are saved.` : "Answer ready. Research and peer review are saved in the process details.");
 }

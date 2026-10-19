@@ -24,3 +24,5 @@
  .main-content .starter-card{padding:9px 7px;min-height:0;font-size:9px}
  .main-content .starter-card>svg{display:none}
 }
+
+.final-outcome{scroll-margin-top:24px;margin:20px 0;border-top:2px solid #c9ecac;padding-top:16px}.final-outcome-heading{font-size:20px;color:#c9ecac;margin:0 0 12px}.final-outcome:target{outline:2px solid #c9ecac60;outline-offset:8px}.workflow-summary>a.secondary-button{display:inline-block;margin-right:8px;text-decoration:none}

@@ -7,5 +7,5 @@ test("one combined answer follows hidden peer review",async({page})=>{
  await expect(page.getByRole("article",{name:"SovereignOS response"})).toBeVisible({timeout:40000});
  await expect(page.getByRole("article",{name:"OpenAI research brief response"})).not.toBeVisible();
  await expect(page.getByText("Approve proposal & generate final plan")).not.toBeVisible();
- await expect(page.getByText("Research and review complete",{exact:true})).toBeVisible();
+ await expect(page.getByText("Final outcome ready",{exact:true})).toBeVisible();
 });
