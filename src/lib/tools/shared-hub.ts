@@ -13,7 +13,7 @@ export const hubShapes={
 export type HubTool=keyof typeof hubShapes;
 const allowed=new Set(['.md','.txt','.csv','.json','.ts','.tsx','.js','.jsx','.py','.html','.css','.sql','.yaml','.yml']);
 function permitted(file:string){return allowed.has(path.extname(file).toLowerCase())&&!/(^|[\/_.-])(secret|credentials?|tokens?|passwords?|auth|private[-_]?key)([\/_.-]|$)/i.test(file)&&!path.basename(file).startsWith('.');}
-export function redactKnownSecrets(text:string){for(const name of ['OPENAI_API_KEY','ANTHROPIC_API_KEY','PERPLEXITY_API_KEY','XAI_API_KEY','SUPABASE_SERVICE_ROLE_KEY','WORKER_SECRET','APP_PASSWORD','CONNECTOR_ENCRYPTION_KEY']){const secret=process.env[name];if(secret&&secret.length>=8)text=text.split(secret).join('[REDACTED]');}return text;}
+export function redactKnownSecrets(text:string){for(const name of ['GEMINI_API_KEY','OPENAI_API_KEY','ANTHROPIC_API_KEY','PERPLEXITY_API_KEY','XAI_API_KEY','SUPABASE_SERVICE_ROLE_KEY','WORKER_SECRET','APP_PASSWORD','CONNECTOR_ENCRYPTION_KEY']){const secret=process.env[name];if(secret&&secret.length>=8)text=text.split(secret).join('[REDACTED]');}return text;}
 export class SharedHub {
  constructor(readonly root:string,readonly context:()=>Promise<SharedContext>){ }
  async init(){await mkdir(this.root,{recursive:true});}

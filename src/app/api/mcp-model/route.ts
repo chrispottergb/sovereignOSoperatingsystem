@@ -3,6 +3,7 @@ import {handoffToAya} from '@/lib/server/aya-handoff';
 import {planSymbiosis,runGrokbot} from '@/lib/server/symbiosis';
 import {symbiosisInput} from '@/lib/symbiosis';
 import {createAttachment,inspectAttachments,uploadInput} from '@/lib/server/attachments';
+import {askGemini,geminiConfig,geminiInput} from '@/lib/server/gemini';
 import {askMuse,museConfig,museInput} from '@/lib/server/muse';
 import {listSpecialists,queueMusic,specialistJobs,toggleSpecialist} from '@/lib/server/specialists';
 import {z} from 'zod';
@@ -18,7 +19,7 @@ const schema=z.discriminatedUnion('action',[
  z.object({action:z.literal('handoff_to_aya'),input:ayaInput}).strict(),
  z.object({action:z.literal('symbiosis_plan'),input:symbiosisInput}),z.object({action:z.literal('grokbot'),input:symbiosisInput.extend({brief:z.string().min(1).max(1800)})}),
  z.object({action:z.literal('attachment_upload'),input:uploadInput}),z.object({action:z.literal('attachment_inspect'),ids:z.array(uuid).min(1).max(4),prompt:z.string().min(1).max(12000)}),
- z.object({action:z.literal('muse_probe')}),z.object({action:z.literal('muse_advise'),input:museInput}),
+ z.object({action:z.literal('gemini_advise'),input:geminiInput}),z.object({action:z.literal('muse_probe')}),z.object({action:z.literal('muse_advise'),input:museInput}),
  z.object({action:z.literal('model'),provider:z.enum(['openai','claude','perplexity','grok']),stage:z.enum(['answer','review','revise','final']),spendingMode:z.enum(['economy','thorough']).default('economy'),prompt:z.string().min(1).max(290000)}),
  z.object({action:z.literal('list_specialists')}),z.object({action:z.literal('generate_music'),input:z.unknown()}),z.object({action:z.literal('read_specialist_job'),id:uuid}),z.object({action:z.literal('toggle_specialist'),enabled:z.boolean()}),
  z.object({action:z.literal('capabilities')}),z.object({action:z.literal('list_connectors')}),
@@ -35,6 +36,7 @@ export async function POST(request:Request){try{
  if(v.action==='grokbot')return Response.json(await runGrokbot(v.input,request.signal),{headers:{'Cache-Control':'no-store'}});
  if(v.action==='attachment_upload')return Response.json(await createAttachment(v.input),{headers:{'Cache-Control':'no-store'}});
  if(v.action==='attachment_inspect')return Response.json(await inspectAttachments(v.ids,v.prompt,request.signal),{headers:{'Cache-Control':'no-store'}});
+ if(v.action==='gemini_advise')return Response.json(await askGemini(v.input,request.signal));
  if(v.action==='muse_probe')return Response.json(await askMuse({prompt:'Reply with exactly CONNECTED.'},request.signal,true));
  if(v.action==='muse_advise')return Response.json(await askMuse(v.input,request.signal));
  if(v.action==='model'){if(v.stage==='final'&&!['claude','openai'].includes(v.provider))throw new AppError('VALIDATION','Final evaluator must be Claude or OpenAI.',400);return Response.json(await completion(request.signal,v.spendingMode)(v.provider,v.prompt,v.stage));}
@@ -42,7 +44,7 @@ export async function POST(request:Request){try{
  if(v.action==='generate_music')return Response.json(await queueMusic(v.input));
  if(v.action==='read_specialist_job')return Response.json({jobs:await specialistJobs(v.id)});
  if(v.action==='toggle_specialist')return Response.json(await toggleSpecialist(v.enabled));
- if(v.action==='capabilities')return Response.json({providers:providerConfig(),muse:museConfig(),storage:storageReady()?'configured':'not_configured',cloudEnabled:false});
+ if(v.action==='capabilities')return Response.json({providers:providerConfig(),muse:museConfig(),gemini:geminiConfig(),storage:storageReady()?'configured':'not_configured',cloudEnabled:false});
  if(v.action==='list_connectors')return Response.json({configured:true,connectors:await db('astra_connectors?select=id,provider,label,enabled,permissions&order=created_at.desc')});
  if(v.action==='read_connectors')return Response.json(await connectorSnapshot(v.ids));
  if(v.action==='toggle_connector'){const rows=await db<unknown[]>(`astra_connectors?id=eq.${v.id}`,{method:'PATCH',body:JSON.stringify({enabled:v.enabled,models:['openai','claude','perplexity','grok']})});if(!rows.length)throw new AppError('NOT_FOUND','Connector not found.',404);return Response.json({id:v.id,enabled:v.enabled,models:['openai','claude','perplexity','grok']});}
