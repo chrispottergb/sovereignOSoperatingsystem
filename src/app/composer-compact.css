@@ -1,3 +1,26 @@
 .composer-attachments{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}.attachment-tray.attachment-tray-compact{border:0;padding:0;margin:0;font-size:11px;min-width:0;max-width:100%}.attachment-tray-compact>button{padding:5px 9px;border-radius:7px;font-size:11px;line-height:18px}.attachment-tray-compact ul{margin:6px 0 0}.attachment-tray-compact p{margin:5px 0}.composer>textarea{min-height:54px;padding:12px 17px}.composer-bottom{gap:8px}.composer-attachments .context-button{padding:5px 0}@media(max-width:600px){.composer-bottom{flex-wrap:wrap}.composer-attachments{flex:1}.composer-bottom .keyboard-hint{display:none}}
 
 .composer-attachments-top{padding:10px 17px 0}.composer-models-bottom{display:flex;align-items:center;gap:8px;min-width:0;flex-wrap:wrap}.composer-models-bottom .parallel-label{display:none}.composer-bottom{flex-wrap:wrap;align-items:center}.composer-bottom .send-controls{margin-left:auto}.composer-models-bottom .model-toggles{flex-wrap:wrap}@media(max-width:760px){.composer-models-bottom{flex:1 1 100%}.composer-attachments-top{padding:8px 12px 0}}
+
+/* Keep the chat within easy reach beneath a compact welcome area. */
+.main-shell>.topbar{height:54px}
+.main-shell>.main-content{padding-top:14px;padding-bottom:10px}
+.main-shell>.main-content:not(.has-conversation){flex:0 0 auto}
+.main-content .hero{padding:20px 0 18px;min-height:0}
+.main-content .hero-badge{margin-bottom:10px}
+.main-content .hero h1{font-size:clamp(36px,3.4vw,52px);margin:10px 0 12px;letter-spacing:-1.8px}
+.main-content .hero p{font-size:12px;line-height:1.6}
+.main-content .hero .intelligence-orbit{transform:scale(.58);transform-origin:right top;top:0}
+.main-content .starter-grid{margin-top:7px}
+.main-shell>.composer-wrap{padding-top:10px}
+@media(max-width:600px){
+ .main-shell>.topbar{height:48px}
+ .main-shell>.main-content{padding-top:10px;padding-bottom:6px}
+ .main-content .hero{padding:12px 0}
+ .main-content .hero h1{font-size:34px;margin:6px 0 8px}
+ .main-content .hero .intelligence-orbit{display:none}
+ .main-content .hero-badge{font-size:7px;margin-bottom:6px}
+ .main-content .starter-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+ .main-content .starter-card{padding:9px 7px;min-height:0;font-size:9px}
+ .main-content .starter-card>svg{display:none}
+}
