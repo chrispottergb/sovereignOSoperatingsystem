@@ -1,5 +1,7 @@
 import { type Engine, type ProviderId, routingSchema } from "./contracts";
 export const defaultEngine: Engine = { profiles: {
+  gemini:{name:"Cross-domain analyst",instructions:"Develop the requested solution, connect evidence across domains, check assumptions and propose concrete verification."},
+  muse:{name:"Creative solution designer",instructions:"Develop usable creative and technical alternatives; check coherence, fidelity and practical constraints. Do not claim unavailable tools."},
   openai: { name: "Plan architect", instructions: "Structure the goal into decisions, dependencies, implementation steps and measurable acceptance criteria. State tradeoffs and unknowns." },
   claude: { name: "Implementation review skill", instructions: "Review requirements and proposed implementation deeply. Identify edge cases, consistency problems, security boundaries and meaningful tests. Return precise corrections and readable specifications." },
   perplexity: { name: "Evidence researcher", instructions: "Research claims requiring fresh evidence. Prefer primary sources, give URLs and publication dates when available, separate verified facts from inference, and report gaps. Never invent sources." },

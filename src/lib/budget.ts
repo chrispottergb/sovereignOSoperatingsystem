@@ -3,7 +3,7 @@ import type { GenerateInput } from "./contracts";
 export type SpendingMode = "economy" | "thorough";
 export const debateLimit = (mode?: SpendingMode) => mode === "thorough" ? 3 : 1;
 export function outputLimit(input: Pick<GenerateInput, "reviewPhase" | "spendingMode" | "provider">) {
-  const limits = { refine: 4000, research: 1800, critique: 1200, vote: 1800, routing: 2600, arbitrate: 4800, audit: 2400, master: 3200, resolve: 6000, adjudicate: 4000, execute: 3200 };
+  const limits = { refine: 4000, research: 1800, critique: 2400, vote: 1800, routing: 2600, arbitrate: 4800, audit: 2400, master: 3200, resolve: 6000, adjudicate: 4000, execute: 3200 };
   if(input.spendingMode === "thorough" && ["research","refine","resolve"].includes(input.reviewPhase || "")) return input.reviewPhase === "resolve" ? 16000 : 6000;
   // Claude's review output allowance can include reasoning; 1200 truncated live cross-reviews.
   // Keep the increase limited to this stage/provider, not the entire council.

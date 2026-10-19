@@ -2,10 +2,12 @@ import {symbiosisPlanSchema} from './symbiosis';
 import {attachmentBriefSchema} from './attachments';
 import { z } from "zod";
 
-export const providerIds = ["openai", "claude", "perplexity", "grok"] as const;
+export const providerIds = ["openai", "claude", "perplexity", "grok", "gemini", "muse"] as const;
 export const providerSchema = z.enum(providerIds);
 export type ProviderId = z.infer<typeof providerSchema>;
 export const providers: Record<ProviderId, { name: string; description: string; symbol: string }> = {
+  gemini:{name:"Gemini",description:"Analyze & connect",symbol:"✦"},
+  muse:{name:"Muse",description:"Create & evaluate",symbol:"◈"},
   openai: { name: "OpenAI", description: "Reason & create", symbol: "◎" },
   claude: { name: "Claude", description: "Think it through", symbol: "✳" },
   perplexity: { name: "Perplexity", description: "Explore & discover", symbol: "⌘" },
@@ -40,7 +42,7 @@ export const generateSchema = z.object({
   prompt: z.string().trim().min(1).max(12000), history: z.array(messageSchema).max(24).default([]),
   context: contextSchema,
   sharedEvidence: z.string().max(60000).optional(),
-  revisions: z.array(sourceSchema).max(4).optional(),
+  revisions: z.array(sourceSchema).max(providerIds.length).optional(),
   sources: z.array(sourceSchema).max(providerIds.length).optional(),
   reviewPhase: z.enum(["research", "routing", "critique", "vote", "arbitrate", "audit", "master", "execute", "resolve", "adjudicate", "refine"]).optional(),
   critiques: z.array(sourceSchema).max(providerIds.length).optional(),
@@ -49,16 +51,17 @@ export const generateSchema = z.object({
   engine: engineSchema.optional(),
   analytics: analyticsSchema.optional(),
   candidate: candidateSchema.optional(),
-  ballots: z.array(ballotSchema).max(4).optional(),
+  ballots: z.array(ballotSchema).max(providerIds.length).optional(),
   userDecision: decisionSchema.optional(),
   advisorReviews: z.array(sourceSchema).max(2).optional(),
   round: z.number().int().min(1).max(3).optional(),
 }).superRefine((v, c) => {
-  if(v.reviewPhase === "resolve" && (!(["claude","openai"].includes(v.provider)) || v.sources?.length !== 4 || new Set(v.sources?.map(s=>s.provider)).size !== 4 || v.critiques?.length !== 4 || new Set(v.critiques?.map(s=>s.provider)).size !== 4)) c.addIssue({code:"custom",message:"Final evaluation requires four unique answers and four unique adversarial reports."});
-  if (v.reviewPhase === "refine" && (v.sources?.length !== 4 || new Set(v.sources.map(s=>s.provider)).size !== 4 || v.critiques?.length !== 4 || new Set(v.critiques.map(s=>s.provider)).size !== 4)) c.addIssue({code:"custom",message:"Correction requires all four answers and all four reports."});
-  if (v.reviewPhase === "resolve" && v.spendingMode === "thorough" && (v.revisions?.length !== 4 || new Set(v.revisions.map(s=>s.provider)).size !== 4)) c.addIssue({code:"custom",message:"Full synthesis requires four corrected contributions."});
+  if(v.reviewPhase === "resolve" && (!(["claude","openai"].includes(v.provider)) || v.sources?.length !== providerIds.length || new Set(v.sources?.map(s=>s.provider)).size !== providerIds.length || v.critiques?.length !== providerIds.length || new Set(v.critiques?.map(s=>s.provider)).size !== providerIds.length)) c.addIssue({code:"custom",message:"Final evaluation requires six unique answers and six unique adversarial reports."});
+  if (v.reviewPhase === "refine" && (v.sources?.length !== providerIds.length || new Set(v.sources.map(s=>s.provider)).size !== providerIds.length || v.critiques?.length !== providerIds.length || new Set(v.critiques.map(s=>s.provider)).size !== providerIds.length)) c.addIssue({code:"custom",message:"Correction requires all six answers and all six reports."});
+  if (v.reviewPhase === "resolve" && v.spendingMode === "thorough" && (v.revisions?.length !== providerIds.length || new Set(v.revisions.map(s=>s.provider)).size !== providerIds.length)) c.addIssue({code:"custom",message:"Full synthesis requires six corrected contributions."});
   if ((v.reviewPhase === "arbitrate" && v.provider !== "openai") || (v.reviewPhase === "audit" && v.provider !== "claude")) c.addIssue({ code: "custom", message: "Escalation requires Astra first, then Claude Fable 5.1." });
   if (v.reviewPhase && v.kind !== "synthesis") c.addIssue({ code: "custom", message: "Review phases require synthesis mode." });
+  if(v.reviewPhase === "critique" && (v.sources?.length !== providerIds.length-1 || new Set(v.sources?.map(s=>s.provider)).size !== providerIds.length-1))c.addIssue({code:"custom",message:"Each review requires the other five council contributions."});
   if (v.reviewPhase === "critique" && v.sources?.some(s => s.provider === v.provider)) c.addIssue({ code: "custom", message: "Critique sources must come from other models." });
   if (v.reviewPhase === "master" && (!v.critiques?.length || new Set(v.critiques.map(s => s.provider)).size !== v.critiques.length)) c.addIssue({ code: "custom", message: "A master plan needs unique completed critiques." });
   if (v.reviewPhase === "routing" && (!v.participants || new Set(v.participants).size !== v.participants.length)) c.addIssue({ code: "custom", message: "Routing needs unique selected models." });
@@ -67,7 +70,7 @@ export const generateSchema = z.object({
   if (["master", "execute"].includes(v.reviewPhase || "")) {
     const ballots = v.ballots || [];
     const ownerApproved = v.userDecision?.candidateId === v.candidate?.id && v.advisorReviews?.length === 2 && new Set(v.advisorReviews.map(r => r.provider)).size === 2 && v.advisorReviews.some(r => r.provider === "openai") && v.advisorReviews.some(r => r.provider === "claude");
-    if (!ownerApproved && (ballots.length !== 4 || new Set(ballots.map(b => b.provider)).size !== 4 || ballots.some(b => b.vote.candidateId !== v.candidate?.id || b.vote.decision !== "approve" || b.vote.objections.length || Object.values(b.vote.checks).some(ok => !ok)))) c.addIssue({ code: "custom", message: "All four models must approve this exact proposal with no unresolved checks or objections." });
+    if (!ownerApproved && (ballots.length !== providerIds.length || new Set(ballots.map(b => b.provider)).size !== providerIds.length || ballots.some(b => b.vote.candidateId !== v.candidate?.id || b.vote.decision !== "approve" || b.vote.objections.length || Object.values(b.vote.checks).some(ok => !ok)))) c.addIssue({ code: "custom", message: "All six models must approve this exact proposal with no unresolved checks or objections." });
   }
   if (v.history.reduce((n, m) => n + m.content.length, 0) > 100000) c.addIssue({ code: "custom", message: "Conversation context is too large. Start a new conversation." });
 });

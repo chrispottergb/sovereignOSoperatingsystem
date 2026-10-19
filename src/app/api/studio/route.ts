@@ -48,7 +48,7 @@ export async function POST(request:Request){try{
  }else if(v.action==="retry"){const ok=await db("rpc/astra_retry_run",{method:"POST",body:JSON.stringify({p_run:v.id})});if(!ok)throw new AppError("RETRY_UNAVAILABLE","This run cannot be retried or has reached its retry limit.",409);kick();
  }else if(v.action==="stop")await db(`astra_runs?id=eq.${v.id}&status=in.(queued,running,paused)`,{method:"PATCH",body:JSON.stringify({status:"cancelled"})});
  else if(v.action==="saveConnector")await saveConnector(v.connector);
- else if(v.action==="toggleConnector")await db(`astra_connectors?id=eq.${v.id}`,{method:"PATCH",body:JSON.stringify({enabled:v.enabled,models:["openai","claude","perplexity","grok"]})});
+ else if(v.action==="toggleConnector")await db(`astra_connectors?id=eq.${v.id}`,{method:"PATCH",body:JSON.stringify({enabled:v.enabled,models:["openai","claude","perplexity","grok","gemini","muse"]})});
  else if(v.action==="draftApproval"){
   const c=(await db<ConnectorRow[]>(`astra_connectors?id=eq.${v.connectorId}`))[0];if(!c||!c.enabled||c.provider!=="telegram")throw new AppError("CONNECTOR_REQUIRED","Select an enabled Telegram connector.",400);
   const payload={text:v.text,destination:c.config.accountId!};const hash=createHash("sha256").update(JSON.stringify(payload)).digest("hex");

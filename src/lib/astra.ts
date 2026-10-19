@@ -9,7 +9,7 @@ export const projectInput = z.object({ name: z.string().trim().min(1).max(80), b
 export const launchInput = z.object({ projectId: z.string().uuid(), prompt: z.string().trim().min(3).max(12000), lane: laneSchema, depth: depthSchema.default("standard"), connectorIds: z.array(z.string().max(60)).max(20).default([]), maxCalls: z.number().int().min(1).max(32).default(18), maxReportedTokens: z.number().int().min(1000).max(1000000).default(180000), botId: z.string().uuid().optional() });
 export type Launch = z.infer<typeof launchInput>;
 export type Step = { id: string; provider: ProviderId; stage: "ground"|"draft"|"critique"|"verify"|"rebuttal"|"synthesize"|"audit"|"revision"; title: string; depends: string[]; instruction: string; search?: boolean; conditional?: "critical"|"discrepancy"; inputIds?: string[] };
-export const strengths: Record<ProviderId,string> = { perplexity: "Evidence desk · deep research and claim verification", grok: "Contrarian · alternative hypotheses and social sentiment", openai: "Builder · actionable drafts and independent audit", claude: "Synthesizer · reasoning, writing and synthesis" };
+export const strengths: Record<ProviderId,string> = { gemini:"Cross-domain analysis", muse:"Creative solution design", perplexity: "Evidence desk · deep research and claim verification", grok: "Contrarian · alternative hypotheses and social sentiment", openai: "Builder · actionable drafts and independent audit", claude: "Synthesizer · reasoning, writing and synthesis" };
 export function suggestLane(prompt: string): Lane {
   if (/\b(generate|create|design)\b.*\b(image|logo|thumbnail|illustration)\b/i.test(prompt)) return "image";
   if (/\b(video|storyboard|shot list)\b/i.test(prompt)) return "video";

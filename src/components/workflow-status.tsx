@@ -38,6 +38,6 @@ export function WorkflowStatus({ turn, busy, onStop, onRetry }: { turn: Turn; bu
     <p className="settings-note">One shared result: research → specialist review → task allocation → agreement → final plan. Expand the evidence and debate records to inspect each model’s contribution.</p>
     {!turn.analytics && <p className="settings-note">Instagram/Facebook account analytics are not connected. Public research can support a campaign draft with stated assumptions. Account analytics and automatic publishing need separate authorized connections.</p>}
     {active && <button className="secondary-button" onClick={onStop}>Stop workflow</button>}
-    {!active && ["error", "cancelled", "unresolved"].includes(turn.council.status) && <button className="secondary-button" disabled={busy || retryAt > now} onClick={() => onRetry(resumable || !!resumeVotes)}>{retryAt > now ? `Provider cooldown · retry in ${Math.ceil((retryAt - now) / 1000)}s` : resumeVotes ? "Retry invalid votes only & continue" : resumable ? "Retry incomplete research & continue" : "Restart all four · new research & votes"}</button>}
+    {!active && ["error", "cancelled", "unresolved"].includes(turn.council.status) && <button className="secondary-button" disabled={busy || retryAt > now} onClick={() => onRetry(resumable || !!resumeVotes)}>{retryAt > now ? `Provider cooldown · retry in ${Math.ceil((retryAt - now) / 1000)}s` : resumeVotes ? "Retry invalid votes only & continue" : resumable ? "Retry incomplete research & continue" : "Restart all six · new research & votes"}</button>}
   </section>;
 }

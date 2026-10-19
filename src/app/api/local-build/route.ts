@@ -13,7 +13,7 @@ const workerSchema=z.discriminatedUnion('action',[
  z.object({action:z.literal('claim'),engines:z.object({codex:z.boolean(),'claude-code':z.boolean()})}),
  z.object({action:z.literal('heartbeat'),id,claim:id,stage:z.string().max(80)}),
  z.object({action:z.literal('finish'),id,claim:id,status:z.enum(['completed','failed']),result:z.record(z.unknown())}),
- z.object({action:z.literal('model'),id,claim:id,provider:z.enum(['openai','claude','perplexity','grok']),stage:z.enum(['answer','review','revise','final']),prompt:z.string().min(1).max(290000)}),
+ z.object({action:z.literal('model'),id,claim:id,provider:z.enum(['openai','claude','perplexity','grok','gemini','muse']),stage:z.enum(['answer','review','revise','final']),prompt:z.string().min(1).max(290000)}),
 ]);
 export async function GET(request:Request){try{await auth.resolve(request);const [jobs,runners]=await Promise.all([db('astra_local_jobs?select=id,input,status,stage,created_at,heartbeat_at,result&order=created_at.desc&limit=20'),db('astra_local_runner?select=last_seen,engines&id=eq.main')]);return Response.json({jobs:[...(jobs as unknown[]),...await listCloudBuilds() as unknown[]],runners,cloudEnabled:cloudBuildConfigured()},{headers:{'Cache-Control':'no-store'}});}catch(e){return errorResponse(e);}}
 export async function POST(request:Request){try{

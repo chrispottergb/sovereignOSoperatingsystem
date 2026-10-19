@@ -10,7 +10,7 @@ describe('durable council recovery',()=>{
   const root=await mkdtemp(path.join(os.tmpdir(),'council-'));const first=new CouncilCheckpoint(root);await first.acquire();await first.bind({task:'Explain'});
   let lateFinished=false;const calls:string[]=[];
   const complete:Complete=async(p,_prompt,stage)=>{calls.push(p+':'+stage);if(stage==='review'&&p==='claude')throw Error('interrupted');if(stage==='review'&&p==='grok'){await new Promise(r=>setTimeout(r,20));lateFinished=true;}return result(stage);};
-  await expect(createOrchestrator(first.wrap(complete))({task:'Explain'})).rejects.toThrow('interrupted');expect(lateFinished).toBe(true);expect(calls).toHaveLength(8);await first.release();
+  await expect(createOrchestrator(first.wrap(complete))({task:'Explain'})).rejects.toThrow('interrupted');expect(lateFinished).toBe(true);expect(calls).toHaveLength(12);await first.release();
   const resumed=new CouncilCheckpoint(root,first.id);await resumed.acquire(true);await resumed.bind({task:'Explain'});const retry=vi.fn<Complete>(async(_p,_prompt,stage)=>result(stage));
   const output=await createOrchestrator(resumed.wrap(retry))({task:'Explain'});expect(output.final).toBe('Supported result');expect(retry.mock.calls.map(c=>c[0]+':'+c[2])).toEqual(['claude:review','claude:final']);await resumed.release();
   const done=new CouncilCheckpoint(root,first.id);await done.acquire(true);const noCalls=vi.fn<Complete>();expect((await createOrchestrator(done.wrap(noCalls))({task:'Explain'})).final).toBe('Supported result');expect(noCalls).not.toHaveBeenCalled();await done.release();

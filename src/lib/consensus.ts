@@ -33,7 +33,7 @@ export function readBallots(turn: Turn) {
   });
 }
 export function unanimous(ballots: ReturnType<typeof readBallots>) {
-  return ballots.length === 4 && new Set(ballots.map(b => b.provider)).size === 4 && ballots.every(b => b.vote.decision === "approve" && !b.vote.objections.length && Object.values(b.vote.checks).every(Boolean));
+  return ballots.length === providerIds.length && new Set(ballots.map(b => b.provider)).size === providerIds.length && ballots.every(b => b.vote.decision === "approve" && !b.vote.objections.length && Object.values(b.vote.checks).every(Boolean));
 }
 export async function runConsensus(options: {
   lead: ProviderId; signal: AbortSignal; read: () => Turn | undefined; patch: (values: Partial<Turn>) => void;
@@ -51,7 +51,7 @@ export async function runConsensus(options: {
   if (!resumeVoting) {
   const pending = reuse ? providerIds.filter(id => !researchComplete(previous, id)) : [...providerIds];
   patch({ answers: reuse ? previous.answers : {}, reviews: {}, votes: {}, rounds: [], routing: undefined, assignments: undefined, candidate: undefined, ballots: undefined, lockedAt: undefined, synthesis: undefined, botRuns: undefined, arbitration: undefined, audit: undefined, userDecision: undefined });
-  update("researching", reuse ? `Retrying ${pending.length} incomplete research request(s). Completed research is preserved; no peer answers are shared during research.` : "Stage 1 of 4: independent research. These are research briefs, not the final plan. Debate, agreement and final synthesis follow only after all four succeed.");
+  update("researching", reuse ? `Retrying ${pending.length} incomplete research request(s). Completed research is preserved; no peer answers are shared during research.` : "Stage 1 of 4: independent research. These are research briefs, not the final plan. Debate, agreement and final synthesis follow only after all six succeed.");
   await Promise.all(pending.map(id => run(id, "research")));
   if (signal.aborted) return;
   const turn = read();
@@ -68,8 +68,8 @@ export async function runConsensus(options: {
     update("reviewing", `Debate round ${round}/${rounds}: challenge evidence, expected outcomes and task fit; respond to earlier objections.`);
     await Promise.all(providerIds.map(id => run(id, "critique")));
     if (signal.aborted) return;
-    if (providerIds.some(id => !complete(read()?.reviews?.[id]))) { update("error", "All four critiques are required. Review the failed model before restarting."); return; }
-    update("routing", `Round ${round}/${rounds}: preparing a proposal and task assignments for all four models to evaluate.`);
+    if (providerIds.some(id => !complete(read()?.reviews?.[id]))) { update("error", "All six critiques are required. Review the failed model before restarting."); return; }
+    update("routing", `Round ${round}/${rounds}: preparing a proposal and task assignments for all six models to evaluate.`);
     await run(lead, "routing");
     if (signal.aborted) return;
     try { if (!complete(read()?.routing)) throw new Error(); candidate = parseCandidate(read()!.routing!.text, crypto.randomUUID()); }
@@ -88,10 +88,10 @@ export async function runConsensus(options: {
     patch({ ballots });
     if (unanimous(ballots)) {
       patch({ assignments: candidate.proposal, lockedAt: Date.now() });
-      update("planning", "All four approved the same proposal with no open objections. Tasks are locked; final synthesis must preserve them.");
+      update("planning", "All six approved the same proposal with no open objections. Tasks are locked; final synthesis must preserve them.");
       await run(lead, "master");
       if (signal.aborted) return;
-      if (complete(read()?.synthesis)) update("complete", "Four-model agreement recorded. Review the locked assignments and suggested bot trigger. Agreement is not proof of effectiveness.");
+      if (complete(read()?.synthesis)) update("complete", "Six-model agreement recorded. Review the locked assignments and suggested bot trigger. Agreement is not proof of effectiveness.");
       else update("error", "Tasks were agreed, but final synthesis failed. Deployment suggestions are disabled. Restart to research and agree again.");
       return;
     }

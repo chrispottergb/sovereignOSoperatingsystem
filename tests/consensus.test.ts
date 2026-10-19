@@ -19,7 +19,7 @@ function setup(rejectRounds = 0) {
       const reject = provider === "grok" && (turn.rounds?.length || 0) < rejectRounds;
       turn.votes = { ...turn.votes, [provider]: answer(provider, JSON.stringify({ candidateId: turn.candidate!.id, decision: reject ? "revise" : "approve", rationale: "Evidence evaluated", objections: reject ? ["Resolve feasibility"] : [], checks: { evidence: true, feasibility: !reject, impact: true, efficiency: true, taskFit: true } })) };
     }
-    if (phase === "master") { expect(turn.lockedAt).toBeDefined(); expect(turn.ballots).toHaveLength(4); turn.synthesis = answer(provider, "Final plan"); }
+    if (phase === "master") { expect(turn.lockedAt).toBeDefined(); expect(turn.ballots).toHaveLength(6); turn.synthesis = answer(provider, "Final plan"); }
   };
   const options = { lead: "openai" as const, signal: controller.signal, read: () => turn, patch: (values: Partial<Turn>) => Object.assign(turn, values), update: (status: NonNullable<Turn["council"]>["status"], message: string) => { turn.council = { status, message, participants: [...providerIds], lead: "openai" }; }, run };
   return { turn, controller, calls, options, run };
@@ -49,7 +49,7 @@ describe("research, debate and agreement gates", () => {
   });
   it("defaults to one round and preserves the Astra then Fable escalation order", async () => {
     const { turn, calls, options } = setup(3); turn.spendingMode = undefined; await runConsensus(options);
-    expect(turn.rounds).toHaveLength(1); expect(calls).toHaveLength(15); expect(calls.slice(-2)).toEqual(["arbitrate:openai", "audit:claude"]); expect(turn.lockedAt).toBeUndefined(); expect(turn.council?.status).toBe("awaiting_decision");
+    expect(turn.rounds).toHaveLength(1); expect(calls).toHaveLength(21); expect(calls.slice(-2)).toEqual(["arbitrate:openai", "audit:claude"]); expect(turn.lockedAt).toBeUndefined(); expect(turn.council?.status).toBe("awaiting_decision");
   });
   it("does not call providers during their reported research cooldown", async () => {
     const { turn, calls, options } = setup();
@@ -62,7 +62,7 @@ describe("research, debate and agreement gates", () => {
     turn.createdAt = Date.now(); turn.council = { status: "error", lead: "openai", participants: [...providerIds] };
     turn.answers = { openai: { ...answer("openai"), status: "error" }, claude: answer("claude", "saved Claude research"), grok: answer("grok"), perplexity: answer("perplexity") };
     await runConsensus({ ...options, resumeResearch: true });
-    expect(calls.filter(c => c.startsWith("research:"))).toEqual(["research:openai"]);
+    expect(calls.filter(c => c.startsWith("research:"))).toEqual(["research:openai","research:gemini","research:muse"]);
     expect(turn.answers.claude?.text).toBe("saved Claude research"); expect(turn.council?.status).toBe("complete");
   });
   it("does not reuse old research or ordinary independent responses", async () => {
@@ -71,22 +71,22 @@ describe("research, debate and agreement gates", () => {
     for (const id of providerIds) turn.answers[id] = answer(id);
     expect(canResumeResearch(turn)).toBe(false);
     await runConsensus({ ...options, resumeResearch: true });
-    expect(calls.filter(c => c.startsWith("research:"))).toHaveLength(4);
+    expect(calls.filter(c => c.startsWith("research:"))).toHaveLength(6);
     turn.createdAt = Date.now(); turn.council = undefined; expect(canResumeResearch(turn)).toBe(false);
   });
   it("requires four independent research calls before debate, four approvals before lock, then synthesis", async () => {
     const { turn, calls, options } = setup(); await runConsensus(options);
-    expect(calls.slice(0,4)).toEqual(providerIds.map(p => `research:${p}`));
-    expect(calls.slice(4,8)).toEqual(providerIds.map(p => `critique:${p}`));
-    expect(calls.slice(9,13)).toEqual(providerIds.map(p => `vote:${p}`));
-    expect(calls.at(-1)).toBe("master:openai"); expect(calls).toHaveLength(14);
+    expect(calls.slice(0,6)).toEqual(providerIds.map(p => `research:${p}`));
+    expect(calls.slice(6,12)).toEqual(providerIds.map(p => `critique:${p}`));
+    expect(calls.slice(13,19)).toEqual(providerIds.map(p => `vote:${p}`));
+    expect(calls.at(-1)).toBe("master:openai"); expect(calls).toHaveLength(20);
     expect(turn.council?.status).toBe("complete"); expect(turn.assignments).toEqual(proposal); expect(turn.rounds).toHaveLength(1);
   });
   it("stops if one research provider fails or lacks provider-supplied citations", async () => {
     for (const failure of ["error", "no-citations", "truncated"]) {
       const { turn, calls, options, run } = setup();
       await runConsensus({ ...options, run: async (id, phase) => { await run(id,phase); if (id === "grok") { if (failure === "error") turn.answers.grok!.status = "error"; if (failure === "no-citations") turn.answers.grok!.citations = []; if (failure === "truncated") turn.answers.grok!.finishReason = "max_output_tokens"; } } });
-      expect(calls).toHaveLength(4); expect(turn.council?.status).toBe("error"); expect(turn.lockedAt).toBeUndefined();
+      expect(calls).toHaveLength(6); expect(turn.council?.status).toBe("error"); expect(turn.lockedAt).toBeUndefined();
     }
   });
   it("revises a rejected proposal and preserves the debate and exact proposal votes", async () => {
@@ -96,7 +96,7 @@ describe("research, debate and agreement gates", () => {
   });
   it("never fabricates agreement after the three-round limit", async () => {
     const { turn, calls, options } = setup(3); await runConsensus(options);
-    expect(turn.rounds).toHaveLength(3); expect(calls).toHaveLength(33); expect(calls.slice(-2)).toEqual(["arbitrate:openai", "audit:claude"]); expect(turn.council?.status).toBe("awaiting_decision");
+    expect(turn.rounds).toHaveLength(3); expect(calls).toHaveLength(47); expect(calls.slice(-2)).toEqual(["arbitrate:openai", "audit:claude"]); expect(turn.council?.status).toBe("awaiting_decision");
     expect(turn.lockedAt).toBeUndefined(); expect(turn.synthesis).toBeUndefined(); expect(turn.assignments).toBeUndefined();
   });
   it("rejects stale votes and malformed output", async () => {

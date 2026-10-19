@@ -29,5 +29,5 @@ export async function specialistJobs(id?:string,sourceTurnId?:string){
 }
 export async function toggleSpecialist(enabled:boolean){
  await db('astra_specialist_settings?id=eq.music',{method:'PATCH',body:JSON.stringify({enabled})});
- return {enabled,models:['openai','claude','perplexity','grok'],note:'Disabling prevents new claims; cancel an active job separately.'};
+ return {enabled,models:['openai','claude','perplexity','grok','gemini','muse'],note:'Disabling prevents new claims; cancel an active job separately.'};
 }

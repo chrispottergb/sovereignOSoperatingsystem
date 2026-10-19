@@ -46,7 +46,7 @@ describe("API spending policy", () => {
     const mock = vi.fn().mockResolvedValue(new Response('data: {"type":"response.completed","response":{}}\n\n', { headers: { "content-type": "text/event-stream" } })); vi.stubGlobal("fetch", mock);
     for await (const event of adapters.perplexity.stream({ ...input, provider: "perplexity", reviewPhase: "critique" }, new AbortController().signal)) void event;
     const body = JSON.parse(mock.mock.calls[0][1].body);
-    expect(body.preset).toBeUndefined(); expect(body.tools).toEqual([]); expect(body.max_steps).toBe(1); expect(body.max_output_tokens).toBe(1200);
+    expect(body.preset).toBeUndefined(); expect(body.tools).toEqual([]); expect(body.max_steps).toBe(1); expect(body.max_output_tokens).toBe(2400);
   });
   it("caps native research calls and avoids automatic model fallback", async () => {
     vi.stubEnv("OPENAI_API_KEY", "test-only-key");

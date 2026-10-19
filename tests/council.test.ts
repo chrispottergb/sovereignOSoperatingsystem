@@ -19,7 +19,7 @@ describe("Grok integration", () => {
     expect(error).toMatchObject({ code: "PROVIDER_BILLING" }); expect(String(error)).not.toContain("private upstream details"); expect(String(error)).not.toContain("test-secret");
   });
   it("enables native search for each research adapter and uses exact escalation models", async () => {
-    for (const provider of providerIds) {
+    for (const provider of ["openai","claude","perplexity","grok"] as const) {
       vi.stubEnv(({ openai: "OPENAI_API_KEY", claude: "ANTHROPIC_API_KEY", perplexity: "PERPLEXITY_API_KEY", grok: "XAI_API_KEY" })[provider], "test-secret");
       const frame = provider === "claude" ? 'data: {"type":"message_stop"}\n\n' : 'data: {"type":"response.completed","response":{}}\n\n';
       const mock = vi.fn().mockImplementation(async () => new Response(frame, { headers: { "content-type": "text/event-stream" } })); vi.stubGlobal("fetch",mock);

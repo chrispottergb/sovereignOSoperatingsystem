@@ -10,12 +10,12 @@ export async function runChatWorkflow(o: {
  if(signal.aborted) return;
  if(!o.resumeResearch) patch({answers:{},reviews:{},revisions:{}});
  patch({synthesis:undefined,candidate:undefined,ballots:undefined,votes:undefined,rounds:undefined,routing:undefined,assignments:undefined,lockedAt:undefined,arbitration:undefined,audit:undefined,userDecision:undefined,botRuns:undefined});
- update("researching","Four models are independently answering your original request…");
+ update("researching","Six models are independently answering your original request…");
  const pending=providerIds.filter(id=>!usable(read()?.answers[id]));
  await Promise.all(pending.map(id=>run(id,"research")));
  if(signal.aborted) return;
  const available=providerIds.filter(id=>usable(read()?.answers[id]));
- if(available.length!==4) { update("error","All four answers must finish before cross-review. Check the saved errors and retry; completed answers will be reused."); return; }
+ if(available.length!== providerIds.length) { update("error","All six answers must finish before cross-review. Check the saved errors and retry; completed answers will be reused."); return; }
  update("reviewing","Comparing evidence and challenging the proposed approach behind the scenes…");
  const reviewers=providerIds;
  // Changed research invalidates earlier critiques. Otherwise preserve completed reviews on retry.
@@ -24,9 +24,9 @@ export async function runChatWorkflow(o: {
  if(pendingReviews.length) patch({revisions:{}});
  await Promise.all(pendingReviews.map(id=>run(id,"critique")));
  if(signal.aborted) return;
- if(providerIds.some(id=>!usable(read()?.reviews?.[id]))){update("error","All four adversarial reports must finish before final evaluation. Retry to reuse completed work.");return;}
+ if(providerIds.some(id=>!usable(read()?.reviews?.[id]))){update("error","All six adversarial reports must finish before final evaluation. Retry to reuse completed work.");return;}
  if(read()?.spendingMode === "thorough"){
-  update("reviewing","All four models are correcting their work against the full cross-review…");
+  update("reviewing","All six models are correcting their work against the full cross-review…");
   await Promise.all(providerIds.filter(id=>!usable(read()?.revisions?.[id])).map(id=>run(id,"refine")));
   if(signal.aborted)return;
   if(providerIds.some(id=>!usable(read()?.revisions?.[id]))){update("error","Correction is incomplete. Retry to preserve completed work and finish the missing contributions.");return;}

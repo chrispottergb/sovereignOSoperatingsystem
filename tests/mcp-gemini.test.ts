@@ -15,6 +15,6 @@ it('shares Gemini with every council stage and reuses it after an interrupted ru
  const complete=vi.fn<Complete>().mockRejectedValueOnce(Error('Interrupted')).mockImplementation(async(_p,_prompt,stage)=>({model:'test',tokens:{},response:stage==='final'?JSON.stringify({final:'Combined answer',not_checked:[]}):'SCOPE: Explain'}));
  let id='';try{await runSharedCouncil({task:'Explain'},hub,new AbortController().signal,[],complete,false,undefined,'economy',false,true);}catch(e){id=(e as Error).message.match(/Saved run: ([0-9a-f-]+)/)![1];}
  expect(id).toBeTruthy();const result=await runSharedCouncil({task:'Explain'},hub,new AbortController().signal,[],complete,false,id,'economy',false,true);
- expect(result.final).toBe('Combined answer');expect(m.gemini).toHaveBeenCalledTimes(1);
- for(const call of complete.mock.calls)expect(call[1]).toContain('Gemini evidence');
+ expect(result.final).toBe('Combined answer');expect(m.gemini).not.toHaveBeenCalled();expect(complete.mock.calls.filter(c=>c[0]==='gemini').map(c=>c[2])).toEqual(['answer','review']);
+ expect(complete.mock.calls.at(-1)![1]).toContain('gemini');
 });

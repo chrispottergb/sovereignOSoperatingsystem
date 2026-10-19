@@ -16,12 +16,12 @@ function fixture(fail?:ProviderId) {
 }
 it("finishes one answer without votes or manual deadlock approval",async()=>{
  const f=fixture();await runChatWorkflow(f.options);
- expect(f.calls).toHaveLength(9);expect(f.calls.at(-1)).toBe("claude:resolve");
+ expect(f.calls).toHaveLength(13);expect(f.calls.at(-1)).toBe("claude:resolve");
  expect(f.read().council?.status).toBe("complete");expect(f.read().lockedAt).toBeUndefined();
 });
 it("stops before review when one answer fails",async()=>{
  const f=fixture("grok");await runChatWorkflow(f.options);
- expect(f.read().council?.status).toBe("error");expect(f.calls).toHaveLength(4);
+ expect(f.read().council?.status).toBe("error");expect(f.calls).toHaveLength(6);
 });
 it("retries final synthesis without repeating completed research and critiques",async()=>{
  const f=fixture();await runChatWorkflow(f.options);f.calls.length=0;
@@ -31,13 +31,19 @@ it("stopping before a run prevents all billable requests",async()=>{
  const f=fixture();await runChatWorkflow({...f.options,signal:AbortSignal.abort()});expect(f.calls).toEqual([]);
 });
 
-it("full council corrects all four contributions before the selected final editor",async()=>{
+it("full council corrects all six contributions before the selected final editor",async()=>{
  const f=fixture();f.options.patch({spendingMode:"thorough"});
  const update=f.options.update;f.options.update=(status,message)=>{update(status,message);f.read().council!.lead="openai";};
- await runChatWorkflow(f.options);expect(f.calls).toHaveLength(13);expect(f.calls.slice(8,12)).toEqual(["openai:refine","claude:refine","perplexity:refine","grok:refine"]);expect(f.calls.at(-1)).toBe("openai:resolve");
+ await runChatWorkflow(f.options);expect(f.calls).toHaveLength(19);expect(f.calls.slice(12,18)).toEqual(["openai:refine","claude:refine","perplexity:refine","grok:refine","gemini:refine","muse:refine"]);expect(f.calls.at(-1)).toBe("openai:resolve");
  f.calls.length=0;await runChatWorkflow({...f.options,resumeResearch:true});expect(f.calls).toEqual(["openai:resolve"]);
 });
 it("a failed correction blocks the final answer and retry reuses completed corrections",async()=>{
  const f=fixture();f.options.patch({spendingMode:"thorough"});const run=f.options.run;let failing=true;f.options.run=async(p,s)=>{await run(p,s);if(p==="grok"&&s==="refine"&&failing)f.read().revisions!.grok!.status="error";};
- await runChatWorkflow(f.options);expect(f.calls).toHaveLength(12);expect(f.read().council?.status).toBe("error");failing=false;f.calls.length=0;await runChatWorkflow({...f.options,resumeResearch:true});expect(f.calls).toEqual(["grok:refine","claude:resolve"]);
+ await runChatWorkflow(f.options);expect(f.calls).toHaveLength(18);expect(f.read().council?.status).toBe("error");failing=false;f.calls.length=0;await runChatWorkflow({...f.options,resumeResearch:true});expect(f.calls).toEqual(["grok:refine","claude:resolve"]);
+});
+
+it("upgrades saved four-member research without repeating their assessments",async()=>{
+ const f=fixture();for(const p of ['openai','claude','perplexity','grok'] as const)await f.options.run(p,'research');f.calls.length=0;
+ await runChatWorkflow({...f.options,resumeResearch:true});
+ expect(f.calls.filter(c=>c.endsWith(':research'))).toEqual(['gemini:research','muse:research']);expect(f.calls.filter(c=>c.endsWith(':critique'))).toHaveLength(6);expect(f.calls.at(-1)).toBe('claude:resolve');expect(f.read().council?.status).toBe('complete');
 });

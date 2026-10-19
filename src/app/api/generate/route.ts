@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     if (!parsed.success) throw new AppError("VALIDATION", parsed.error.issues[0]?.message || "Invalid request.", 400);
     const input = parsed.data;
     if (input.mode === "demo" && !demoEnabled()) throw new AppError("DEMO_DISABLED", "Demo mode is disabled on this server.", 403);
-    if (input.mode === "live" && !process.env[keyNames[input.provider]]?.trim()) throw new AppError("MISSING_KEY", `Add ${keyNames[input.provider]} to the server environment variables, then restart or redeploy the app.`, 503);
+    if (input.mode === "live" && !(input.provider==="muse"?process.env.MUSE_API_KEY||process.env.MODEL_API_KEY:process.env[keyNames[input.provider]])?.trim()) throw new AppError("MISSING_KEY", `Add ${keyNames[input.provider]} to the server environment variables, then restart or redeploy the app.`, 503);
     const release = acquireStream();
     const abort = new AbortController();
     const signal = AbortSignal.any([request.signal, abort.signal, AbortSignal.timeout(boundedEnv("REQUEST_TIMEOUT_MS", 180000, 5000, 280000))]);

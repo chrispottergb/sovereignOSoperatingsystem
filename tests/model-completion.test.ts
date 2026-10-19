@@ -18,5 +18,5 @@ it('reserves bounded Claude cross-review headroom without increasing other stage
  const {outputLimit}=await import('../src/lib/budget');
  expect(outputLimit({provider:'claude',reviewPhase:'critique',spendingMode:'economy'})).toBe(4096);
  expect(outputLimit({provider:'claude',reviewPhase:'research',spendingMode:'economy'})).toBe(1800);
- expect(outputLimit({provider:'openai',reviewPhase:'critique',spendingMode:'economy'})).toBe(1200);
+ expect(outputLimit({provider:'openai',reviewPhase:'critique',spendingMode:'economy'})).toBe(2400);
 });
