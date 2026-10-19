@@ -1,4 +1,5 @@
 "use client";
+import {requestDeadline,interruptedRequest} from "@/lib/request-deadline";
 import {symbiosisPlanSchema} from '@/lib/symbiosis';
 import type {AttachmentBrief} from '@/lib/attachments';
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -59,12 +60,13 @@ export function useWorkbench() {
     const key = `${conversationId}/${turnId}/${target === "response" ? provider : reviewPhase === "vote" || reviewPhase === "execute" || reviewPhase === "refine" ? reviewPhase + "/" + provider : reviewPhase === "routing" ? "routing" : reviewPhase === "critique" ? "critique/" + provider : "synthesis"}`;
     jobs.current.get(key)?.abort();
     const controller = new AbortController(); jobs.current.set(key, controller);
+    const clearDeadline=requestDeadline(controller);
     const attemptId = crypto.randomUUID();
     const recordAttempt = (values: Partial<NonNullable<Turn["attempts"]>[number]>) => mutate(w => ({ ...w, conversations: w.conversations.map(c => c.id !== conversationId ? c : { ...c, turns: c.turns.map(t => t.id !== turnId ? t : { ...t, attempts: (t.attempts || []).map(a => a.id === attemptId ? { ...a, ...values } : a) }) }) }));
     mutate(w => ({ ...w, conversations: w.conversations.map(c => c.id !== conversationId ? c : { ...c, turns: c.turns.map(t => t.id !== turnId ? t : { ...t, attempts: [...(t.attempts || []), { id: attemptId, provider, phase: reviewPhase || kind, startedAt: Date.now(), status: "streaming" }] }) }) }));
     let attemptStatus: "complete" | "error" | "cancelled" = "error";
     const initial: Answer = { provider, status: "streaming", text: "", citations: [] };
-    mutate(w => ({ ...w, conversations: w.conversations.map(c => c.id !== conversationId ? c : { ...c, turns: c.turns.map(t => t.id !== turnId ? t : reviewPhase === "refine" ? {...t,revisions:{...t.revisions,[provider]:initial}} : reviewPhase === "arbitrate" || reviewPhase === "adjudicate" ? { ...t, arbitration: initial } : reviewPhase === "audit" ? { ...t, audit: initial } : reviewPhase === "vote" ? { ...t, votes: { ...t.votes, [provider]: initial } } : reviewPhase === "execute" ? { ...t, botRuns: { ...t.botRuns, [provider]: initial } } : reviewPhase === "routing" ? { ...t, routing: initial } : reviewPhase === "critique" ? { ...t, reviews: { ...t.reviews, [provider]: initial } } : target === "synthesis" ? { ...t, ...(!reviewPhase ? { council: undefined } : {}), synthesis: initial } : { ...t, ...(!councilActive(t) ? { council: undefined, reviews: undefined } : {}), synthesis: undefined, answers: { ...t.answers, [provider]: initial } }) }) }));
+    mutate(w => ({ ...w, conversations: w.conversations.map(c => c.id !== conversationId ? c : { ...c, turns: c.turns.map(t => t.id !== turnId ? t : reviewPhase === "refine" ? {...t,revisions:{...t.revisions,[provider]:initial}} : reviewPhase === "arbitrate" || reviewPhase === "adjudicate" ? { ...t, arbitration: initial } : reviewPhase === "audit" ? { ...t, audit: initial } : reviewPhase === "vote" ? { ...t, votes: { ...t.votes, [provider]: initial } } : reviewPhase === "execute" ? { ...t, botRuns: { ...t.botRuns, [provider]: initial } } : reviewPhase === "routing" ? { ...t, routing: initial } : reviewPhase === "critique" ? { ...t, reviews: { ...t.reviews, [provider]: initial } } : target === "synthesis" ? { ...t, ...(!reviewPhase ? { council: undefined } : {}), previousSynthesis:usable(t.synthesis)?t.synthesis:t.previousSynthesis, synthesis: initial } : { ...t, ...(!councilActive(t) ? { council: undefined, reviews: undefined } : {}), synthesis: undefined, answers: { ...t.answers, [provider]: initial } }) }) }));
     const patch = (updater: (a: Answer) => Answer) => { if (jobs.current.get(key) === controller) updateAnswer(conversationId, turnId, provider, reviewPhase === "refine" ? "refine" : reviewPhase === "routing" ? "routing" : reviewPhase === "critique" ? "critique" : target, updater); };
     const sources = completedAnswers(turn.answers).filter(a => turn.council?.protocol !== "chat" || usable(a)).filter(a => reviewPhase !== "critique" || a.provider !== provider).map(a => ({ provider: a.provider, text: a.text, citations: a.citations }));
     const input: GenerateInput = {
@@ -91,12 +93,14 @@ export function useWorkbench() {
         if (event.type === "usage") { recordAttempt({ usage: event.usage }); patch(a => ({ ...a, usage: event.usage })); }
         if (event.type === "citations") patch(a => ({ ...a, citations: [...new Map([...a.citations, ...event.citations].map(c => [c.url, c])).values()] }));
         if (event.type === "error") { terminal = true; patch(a => ({ ...a, status: "error", error: event.message, retryAfter: event.retryAfter ? Date.now() + event.retryAfter * 1000 : undefined })); }
+        if (terminal) break;
         if (event.type === "done") { terminal = true; attemptStatus = "complete"; patch(a => ({ ...a, status: "complete", elapsedMs: event.elapsedMs, finishReason: event.finishReason })); }
+        if(terminal) break;
       }
       if (!terminal) throw new Error("Connection ended before completion. Retry to generate a new response.");
     } catch (error) {
-      patch(a => ({ ...a, status: controller.signal.aborted ? "cancelled" : "error", error: controller.signal.aborted ? undefined : error instanceof Error ? error.message : "Connection interrupted. Please retry." }));
-    } finally { recordAttempt({ status: controller.signal.aborted ? "cancelled" : attemptStatus }); if (jobs.current.get(key) === controller) jobs.current.delete(key); }
+      patch(a => ({ ...a, ...interruptedRequest(controller.signal,error) }));
+    } finally { clearDeadline(); recordAttempt({ status: controller.signal.aborted ? interruptedRequest(controller.signal,undefined).status : attemptStatus }); if (jobs.current.get(key) === controller) jobs.current.delete(key); }
   }, [mutate, updateAnswer]);
 
   const cancel = (conversationId: string, turnId: string, provider: ProviderId, synthesis = false) => jobs.current.get(`${conversationId}/${turnId}/${synthesis ? "synthesis" : provider}`)?.abort();
@@ -106,25 +110,25 @@ export function useWorkbench() {
     for (const [key, job] of jobs.current) if (key.startsWith(conversationId + "/" + turnId + "/")) job.abort();
     mutate(w => ({ ...w, conversations: w.conversations.map(c => c.id !== conversationId ? c : { ...c, turns: c.turns.map(t => t.id !== turnId || !t.council ? t : { ...t, council: { ...t.council, status: "cancelled", message: "Stopped. Completed results are preserved." } }) }) }));
   }
-  async function startCouncil(conversationId: string, turnId: string, _participants: ProviderId[], lead: ProviderId, resumeResearch = false, allowPartialCouncil = false) {
+  async function startCouncil(conversationId: string, turnId: string, _participants: ProviderId[], lead: ProviderId, resumeResearch = false, allowPartialCouncil?: boolean) {
     const key = conversationId + "/" + turnId;
     if (councils.current.has(key)) return;
     const controller = new AbortController(); councils.current.set(key, controller);
     const read = () => current.current.conversations.find(c => c.id === conversationId)?.turns.find(t => t.id === turnId);
     const patch = (values: Partial<Turn>) => mutate(w => ({ ...w, conversations: w.conversations.map(c => c.id !== conversationId ? c : { ...c, turns: c.turns.map(t => t.id !== turnId ? t : { ...t, ...values }) }) }));
     const update = (status: NonNullable<Turn["council"]>["status"], message: string) => patch({ council: { protocol: "chat", status, participants: [...providerIds], lead: lead === "openai" ? "openai" : "claude", message } });
-    patch({allowPartialCouncil});
+    patch({allowPartialCouncil:allowPartialCouncil ?? (resumeResearch ? read()?.allowPartialCouncil : false)});
     try {
       update("researching","Preparing shared project context and connected evidence…");
-      if(read()?.mode === "live" && read()?.sharedEvidence === undefined){const response=await fetch("/api/council-context",{signal:controller.signal,cache:"no-store"});const data=await response.json();if(!response.ok)throw Error(data.error?.message || "Could not prepare shared evidence.");patch({sharedEvidence:data.evidence});}
+      if(read()?.mode === "live" && read()?.sharedEvidence === undefined){const response=await fetch("/api/council-context",{signal:AbortSignal.any([controller.signal,AbortSignal.timeout(45000)]),cache:"no-store"});const data=await response.json();if(!response.ok)throw Error(data.error?.message || "Could not prepare shared evidence.");patch({sharedEvidence:data.evidence});}
       if(read()?.mode === "live" && read()?.symbiosis && !read()?.orchestration){
         update('researching','Preparing specialist prompts and assigning the council’s work…');const turn=read()!;
-        const response=await fetch('/api/symbiosis',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({action:'plan',input:{prompt:turn.prompt,context:JSON.stringify({finalEditor:lead,project:turn.context,evidence:turn.sharedEvidence,attachments:turn.attachmentBrief?.text,priorConversation:current.current.conversations.find(c=>c.id===conversationId)?.turns.filter(t=>t.createdAt<turn.createdAt&&usable(t.synthesis)).slice(-2).map(t=>({request:t.prompt.slice(0,2000),answer:t.synthesis!.text.slice(0,4000),excerpt:t.prompt.length>2000||t.synthesis!.text.length>4000}))}),forceMuse:false}})});
+        const response=await fetch('/api/symbiosis',{method:'POST',headers:{'Content-Type':'application/json'},signal:AbortSignal.any([controller.signal,AbortSignal.timeout(180000)]),body:JSON.stringify({action:'plan',input:{prompt:turn.prompt,context:JSON.stringify({finalEditor:lead,project:turn.context,evidence:turn.sharedEvidence,attachments:turn.attachmentBrief?.text,priorConversation:current.current.conversations.find(c=>c.id===conversationId)?.turns.filter(t=>t.createdAt<turn.createdAt&&usable(t.synthesis)).slice(-2).map(t=>({request:t.prompt.slice(0,2000),answer:t.synthesis!.text.slice(0,4000),excerpt:t.prompt.length>2000||t.synthesis!.text.length>4000}))}),forceMuse:false}})});
         const data=await response.json();if(!response.ok)throw Error(data.error?.message||'Task planning failed.');patch({orchestration:{plan:symbiosisPlanSchema.parse(data.plan),model:data.model,usage:data.usage,completedAt:data.completedAt}});
       }
       if(read()?.mode === 'live' && read()?.orchestration?.plan.grokbot.needed && !read()?.grokbot){
         update('researching','Grokbot is generating the assigned work product for council review…');const turn=read()!;
-        const response=await fetch('/api/symbiosis',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({action:'grokbot',input:{prompt:turn.prompt,brief:turn.orchestration!.plan.grokbot.prompt,context:JSON.stringify({project:turn.context,evidence:turn.sharedEvidence,attachments:turn.attachmentBrief?.text,muse:turn.muse?.text})}})});
+        const response=await fetch('/api/symbiosis',{method:'POST',headers:{'Content-Type':'application/json'},signal:AbortSignal.any([controller.signal,AbortSignal.timeout(180000)]),body:JSON.stringify({action:'grokbot',input:{prompt:turn.prompt,brief:turn.orchestration!.plan.grokbot.prompt,context:JSON.stringify({project:turn.context,evidence:turn.sharedEvidence,attachments:turn.attachmentBrief?.text,muse:turn.muse?.text})}})});
         const data=await response.json();if(!response.ok)throw Error(data.error?.message||'Grokbot did not finish.');patch({grokbot:data});
       }
       await runChatWorkflow({ signal: controller.signal, read, patch, update, resumeResearch, run: (id, phase) => run(conversationId, turnId, id, "synthesis", phase) }); }

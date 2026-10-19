@@ -14,8 +14,10 @@ export function completion(signal:AbortSignal,spendingMode:'economy'|'thorough'=
   if(event.type==='usage')tokens={...tokens,...event.usage};
   if(event.type==='done'){terminal=true;if(!['stop','end_turn','stop_sequence'].includes(event.finishReason??'stop'))throw new AppError('INCOMPLETE','Provider output was incomplete; saved stages can be resumed.',502);}
   if(event.type==='error')throw new AppError('PROVIDER_STREAM_ERROR',event.message,502);
+  if(terminal)break;
  }
  if(!terminal||!response.trim())throw new AppError('INCOMPLETE','Provider did not return a complete response.',502);
  return {response,model,tokens,provenance:{requestedModel,reportedModel:model,requestId},citations:[...new Map(citations.map(c=>[c.url,c])).values()]};
  }catch(e){const error=publicError(e);error.details={provider,stage,model,requestId,tokens,partialCharacters:response.length,completion:'unknown_or_incomplete'};throw error;}
 };}
+

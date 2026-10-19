@@ -12,3 +12,5 @@ it("normalizes array inputs and assigns Chris-only packets to Chris, preserving 
  const raw={options:[{...option,executor:"CHRIS ONLY",packets:[{...option.packets[0],executor:"MUSE",inputs:["The prompt in PART A"]}]}]};
  const parsed=parseBoss("Complete prompt here\n```boss-actions\n"+JSON.stringify(raw)+"\n```");expect(parsed.plan?.options[0].packets[0].executor).toBe("CHRIS ONLY");expect(parsed.plan?.options[0].packets[0].inputs).toContain("Complete prompt here");
 });
+it("normalization is idempotent across parse and prepare",()=>{const plan=normalizeBoss({options:[{...option,category:"money"}]});expect(normalizeBoss(plan)).toEqual(plan);});
+it("rejects overlong expanded inputs instead of retaining a partially validated plan",()=>{const raw={options:[{...option,packets:[{...option.packets[0],inputs:"See above"}]}]};expect(parseBoss("x".repeat(60000)+"\n```boss-actions\n"+JSON.stringify(raw)+"\n```").plan).toBeNull();});

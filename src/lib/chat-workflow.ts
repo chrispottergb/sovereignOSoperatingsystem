@@ -9,7 +9,7 @@ export async function runChatWorkflow(o: {
  const {signal,read,patch,update,run}=o;
  if(signal.aborted) return;
  if(!o.resumeResearch) patch({answers:{},reviews:{},revisions:{}});
- patch({synthesis:undefined,candidate:undefined,ballots:undefined,votes:undefined,rounds:undefined,routing:undefined,assignments:undefined,lockedAt:undefined,arbitration:undefined,audit:undefined,userDecision:undefined,botRuns:undefined});
+ patch({candidate:undefined,ballots:undefined,votes:undefined,rounds:undefined,routing:undefined,assignments:undefined,lockedAt:undefined,arbitration:undefined,audit:undefined,userDecision:undefined,botRuns:undefined});
  update("researching","Six models are independently answering your original request…");
  const partial=read()?.allowPartialCouncil===true && o.resumeResearch;
  const pending=partial?[]:providerIds.filter(id=>!usable(read()?.answers[id]));
@@ -25,12 +25,12 @@ export async function runChatWorkflow(o: {
  if(pendingReviews.length) patch({revisions:{}});
  await Promise.all(pendingReviews.map(id=>run(id,"critique")));
  if(signal.aborted) return;
- if(reviewers.some(id=>!usable(read()?.reviews?.[id]))){update("error","All six adversarial reports must finish before final evaluation. Retry to reuse completed work.");return;}
+ if(reviewers.some(id=>!usable(read()?.reviews?.[id]))){update("error",`Cross-review incomplete: ${reviewers.filter(id=>!usable(read()?.reviews?.[id])).map(id=>providers[id].name+": "+(read()?.reviews?.[id]?.error||"incomplete response")).join("; ")}. Retry reuses completed work.`);return;}
  if(read()?.spendingMode === "thorough"){
   update("reviewing","Participating models are correcting their work against the cross-review…");
   await Promise.all(reviewers.filter(id=>!usable(read()?.revisions?.[id])).map(id=>run(id,"refine")));
   if(signal.aborted)return;
-  if(reviewers.some(id=>!usable(read()?.revisions?.[id]))){update("error","Correction is incomplete. Retry to preserve completed work and finish the missing contributions.");return;}
+  if(reviewers.some(id=>!usable(read()?.revisions?.[id]))){update("error",`Corrections incomplete: ${reviewers.filter(id=>!usable(read()?.revisions?.[id])).map(id=>providers[id].name).join(", ")}. Retry preserves completed work.`);return;}
  }
  const editor=read()?.council?.lead === "openai" ? "openai" : "claude";
  update("planning",`${editor === "openai" ? "GPT Astra" : "Claude Fable 5.1"} is integrating the evidence, reviews and corrected work into one deliverable…`);

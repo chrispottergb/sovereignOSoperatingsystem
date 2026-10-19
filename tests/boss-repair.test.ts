@@ -1,0 +1,11 @@
+import {beforeEach,it,expect,vi} from 'vitest';
+const m=vi.hoisted(()=>({resolve:vi.fn(),origin:vi.fn(),complete:vi.fn(),release:vi.fn()}));
+vi.mock('../src/lib/server/auth',()=>({auth:{resolve:m.resolve},assertSameOrigin:m.origin,readJsonLimited:(r:Request)=>r.json()}));
+vi.mock('../src/lib/server/model-completion',()=>({completion:()=>m.complete}));
+vi.mock('../src/lib/server/limits',()=>({limiter:{take:vi.fn()},acquireStream:()=>m.release}));
+import {POST} from '../src/app/api/boss/repair/route';
+const request=(text='Saved deliverable')=>new Request('https://test/api/boss/repair',{method:'POST',body:JSON.stringify({text})});
+beforeEach(()=>{vi.resetAllMocks();m.resolve.mockResolvedValue({id:'owner'});});
+it('repairs only the menu and returns no execution or release',async()=>{m.complete.mockResolvedValue({response:'```boss-actions\n{"options":[]}\n```',tokens:{outputTokens:20},model:'fixture'});const response=await POST(request());expect(response.status).toBe(200);const data=await response.json();expect(data.plan).toEqual({options:[]});expect(data.run).toBeUndefined();expect(m.complete).toHaveBeenCalledTimes(1);expect(m.release).toHaveBeenCalledOnce();});
+it('rejects invalid repaired output without returning a plan',async()=>{m.complete.mockResolvedValue({response:'not a menu'});expect((await POST(request())).status).toBe(502);expect(m.release).toHaveBeenCalledOnce();});
+it('blocks unauthenticated and oversized requests before paid calls',async()=>{m.resolve.mockRejectedValueOnce(Error('no auth'));expect((await POST(request())).ok).toBe(false);expect((await POST(request('x'.repeat(60001)))).status).toBe(400);expect(m.complete).not.toHaveBeenCalled();});

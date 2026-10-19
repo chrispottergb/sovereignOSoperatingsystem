@@ -38,3 +38,8 @@ Reports are saved as `reported_unverified`; a report does not mark an action ver
 ## Verification
 
 Unit tests cover schema failures, risk escalation, split ownership, authenticated persistence, GO challenges, stale approvals and storage failures. Browser tests exercise all six contributions and reviews, a single final deliverable, held packets, selection and separate GO on desktop/mobile with mocked provider calls. Production paid provider quality is not proven by these tests.
+
+## Boss completion reliability (2026-10-19)
+Production baseline: dpl_HmwtC3o6mrd99zLqkq794F4CUrgD (70ce826).
+Browser stages now have a 290-second deadline and stop on their first terminal event. Context and optional orchestration have bounded deadlines. Approved reduced-council mode persists on retries. Completed answers remain available during a replacement final attempt.
+Malformed action menus can be repaired separately through an explicit paid-call button. The authenticated repair route validates the result and never dispatches or releases tasks. Selection/GO and manual packet handoffs remain separate from execution. A model failure remains visible and resumable, never represented as completed consensus. Browser orchestration still requires the tab to stay open.
