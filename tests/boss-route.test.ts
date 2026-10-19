@@ -1,0 +1,14 @@
+import {it,expect,vi,beforeEach} from "vitest";
+const mocks=vi.hoisted(()=>({resolve:vi.fn(),origin:vi.fn(),store:vi.fn(),read:vi.fn()}));
+vi.mock("../src/lib/server/auth",()=>({auth:{resolve:mocks.resolve},assertSameOrigin:mocks.origin,readJsonLimited:(r:Request)=>r.json()}));
+vi.mock("../src/lib/server/astra-store",()=>({storeArtifact:mocks.store,readArtifact:mocks.read,storageSettings:()=>({origin:"https://storage.test",key:"fixture"})}));
+import {POST} from "../src/app/api/boss/route";
+const run="d63ce86d-aac7-42da-92cd-7ee3dc2db621";
+const option={id:1,action:"Send the draft",executor:"MUSE",risk:0,category:"external_message",needs:["gmail"],doneWhen:"Message ID",packets:[{executor:"MUSE",objective:"Send a draft",context:["Approved recipient"],steps:["Send only to named recipient"],inputs:"Exact message",constraints:[],approvalGates:"GO"}]};
+const request=(body:unknown)=>new Request("https://example.test/api/boss",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
+beforeEach(()=>{vi.resetAllMocks();mocks.resolve.mockResolvedValue({id:"owner"});vi.stubGlobal("fetch",vi.fn().mockResolvedValue(Response.json({code:"NoSuchKey"},{status:400})));});
+it("saves an immutable normalized packet before selection",async()=>{const r=await POST(request({operation:"prepare",plan:{options:[option]}}));expect(r.status).toBe(200);const saved=JSON.parse(mocks.store.mock.calls[0][1]);expect(saved.plan.options[0].risk).toBe(2);expect(saved.hash).toHaveLength(64);});
+it("requires separate GO and saves no release on selection",async()=>{mocks.read.mockResolvedValue({owner:"owner",hash:"hash",plan:{options:[{...option,risk:2}]}});const data=await (await POST(request({operation:"select",run,selected:[1]}))).json();expect(data.status).toBe("awaiting_go");expect(data.packets).toBeUndefined();expect(mocks.store.mock.calls[0][0]).toContain("approval-");});
+it("rejects stale approval hashes",async()=>{mocks.read.mockResolvedValueOnce({owner:"owner",hash:"new",plan:{options:[option]}}).mockResolvedValueOnce({selected:[1],hash:"old"});expect((await POST(request({operation:"confirm",run,challenge:run,confirmation:"GO"}))).status).toBe(409);expect(mocks.store).not.toHaveBeenCalled();});
+it("fails closed on storage errors and closed runs",async()=>{mocks.read.mockResolvedValue({owner:"owner",hash:"hash",plan:{options:[option]}});vi.stubGlobal("fetch",vi.fn().mockResolvedValue(Response.json({code:"InternalError"},{status:400})));expect((await POST(request({operation:"select",run,selected:[1]}))).status).toBe(502);expect(mocks.store).not.toHaveBeenCalled();});
+it("rejects unauthenticated requests before storage",async()=>{mocks.resolve.mockRejectedValue(Error("auth"));expect((await POST(request({operation:"prepare",plan:{options:[option]}}))).ok).toBe(false);expect(mocks.store).not.toHaveBeenCalled();});

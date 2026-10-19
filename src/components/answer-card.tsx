@@ -1,4 +1,6 @@
 "use client";
+import { parseBoss } from "@/lib/boss";
+import { BossActions } from "./boss-actions";
 import { useEffect, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -15,7 +17,8 @@ export function AnswerCard({ provider, answer, model, onRetry, onCancel, synthes
     <header className="card-head"><div className="provider-icon">{synthesis ? <Sparkles size={19}/> : p.symbol}</div><div className="card-name"><h3>{title || (synthesis ? "Synthesis" : p.name)}</h3><span title={answer?.model || model}>{answer?.model || model || p.description}</span></div><span className={`status-dot ${running ? "pulse" : ""} ${answer?.status || "idle"}`} title={answer?.status || "Ready"}/></header>
     <div className="answer-body">
       {!answer && <div className="card-empty"><span className="ghost-symbol">{p.symbol}</span><p>A different perspective.<br/>The same starting point.</p><span>{p.description}</span></div>}
-      {answer?.text && <div className="prose"><Markdown remarkPlugins={[remarkGfm]} components={{ a: ({ href, children }) => /^https?:\/\//i.test(href || "") ? <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> : <span>{children}</span>, img: ({ alt }) => <span className="image-placeholder">[Image: {alt || "external image"}]</span> }}>{answer.text}</Markdown></div>}
+      {answer?.text && <div className="prose"><Markdown remarkPlugins={[remarkGfm]} components={{ a: ({ href, children }) => /^https?:\/\//i.test(href || "") ? <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> : <span>{children}</span>, img: ({ alt }) => <span className="image-placeholder">[Image: {alt || "external image"}]</span> }}>{synthesis ? parseBoss(answer.text).deliverable : answer.text}</Markdown></div>}
+      {synthesis && answer?.status === "complete" && <BossActions key={answer.text} text={answer.text}/>}
       {running && !answer?.text && <div className="thinking"><span/><span/><span/><p>Connecting ideas…</p></div>}
       {running && answer?.text && <span className="stream-cursor" aria-hidden="true"/>}
       {answer?.error && <div className="response-error" role="alert"><AlertCircle size={16}/><span>{answer.error}</span></div>}
