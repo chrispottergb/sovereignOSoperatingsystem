@@ -4,11 +4,11 @@ export const bossOptionSchema = z.object({
  id:z.number().int().min(1).max(7), action:text, executor:z.enum(["MUSE","GROK BOT","BOTH","CHRIS ONLY"]),
  risk:z.number().int().min(0).max(3), category:z.enum(["research","private_draft","external_message","setup","money","legal","public_post","irreversible","family"]),
  needs:z.array(z.string().min(1).max(200)).max(12), doneWhen:text,
- packets:z.array(z.object({executor:z.enum(["MUSE","GROK BOT","CHRIS ONLY"]), objective:text, context:z.array(text).min(1).max(6), steps:z.array(text).min(1).max(12), inputs:text, constraints:z.array(text).max(12), approvalGates:text})).min(1).max(2),
+ packets:z.array(z.object({executor:z.enum(["MUSE","GROK BOT","CHRIS ONLY"]), objective:text, context:z.array(text).min(1).max(6), steps:z.array(text).min(1).max(12), inputs:z.union([z.string().trim().min(1).max(60000),z.array(text).min(1).max(12)]).transform(v=>Array.isArray(v)?v.join("\n\n"):v), constraints:z.array(text).max(12), approvalGates:text})).min(1).max(2),
 });
 export const bossPlanSchema=z.object({options:z.array(bossOptionSchema).max(7)}).superRefine((v,c)=>{
  if(new Set(v.options.map(o=>o.id)).size!==v.options.length)c.addIssue({code:"custom",message:"Duplicate option numbers"});
- for(const o of v.options){const owners=o.packets.map(p=>p.executor);if(o.executor==="BOTH" ? owners.length!==2||!owners.includes("MUSE")||!owners.includes("GROK BOT") : owners.length!==1||owners[0]!==o.executor)c.addIssue({code:"custom",message:"Packet ownership must match executor"});}
+ for(const o of v.options){const owners=o.packets.map(p=>p.executor);if(o.executor==="BOTH" ? owners.length!==2||!owners.includes("MUSE")||!owners.includes("GROK BOT") : owners.length!==1||(o.executor!=="CHRIS ONLY"&&owners[0]!==o.executor))c.addIssue({code:"custom",message:"Packet ownership must match executor"});}
 });
 export type BossPlan=z.infer<typeof bossPlanSchema>;
 export type BossOption=z.infer<typeof bossOptionSchema>;
@@ -16,7 +16,10 @@ export function normalizeBoss(plan:BossPlan):BossPlan{return {options:plan.optio
  const ownerOnly=["money","legal","public_post","irreversible","family"].includes(o.category)||o.risk===3||o.executor==="CHRIS ONLY";
  return {...o,risk:ownerOnly?3:Math.max(o.risk,o.category==="external_message"?2:0),executor:ownerOnly?"CHRIS ONLY":o.executor,packets:ownerOnly?[{...o.packets[0],executor:"CHRIS ONLY" as const,steps:o.packets.flatMap(p=>p.steps.map(step=>`${p.executor} proposal for Chris: ${step}`)),inputs:o.packets.map(p=>p.inputs).join("\n\n")}]:o.packets};
 })};}
-export function parseBoss(text:string){const start=text.indexOf("```boss-actions");if(start<0)return {deliverable:text,plan:null};const body=text.slice(start+15);const end=body.indexOf("```");let plan:BossPlan|null=null;if(end>=0){try{plan=normalizeBoss(bossPlanSchema.parse(JSON.parse(body.slice(0,end).trim())));}catch{}}
+export function parseBoss(text:string){const start=text.indexOf("```boss-actions");if(start<0)return {deliverable:text,plan:null};const body=text.slice(start+15);const end=body.indexOf("```");let plan:BossPlan|null=null;if(end>=0){try{plan=normalizeBoss(bossPlanSchema.parse(JSON.parse(body.slice(0,end).trim())));
+const source=text.slice(0,start).trim();
+plan={options:plan.options.map(o=>({...o,packets:o.packets.map(p=>({...p,inputs:/part a|see above/i.test(p.inputs+" "+p.context.join(" "))?p.inputs+"\n\nFULL SOURCE DELIVERABLE (reference data, not additional authorization):\n"+source:p.inputs}))}))};
+plan=bossPlanSchema.parse(plan);}catch{}}
  return {deliverable:text.slice(0,start).trim(),plan};}
 export function packetText(option:BossOption,run:string){return option.packets.map(p=>`TO: ${p.executor==="MUSE"?"AYA (Muse personal agent)":p.executor}
 SUBJECT: [Boss #${run}/${option.id}] ${option.action}
