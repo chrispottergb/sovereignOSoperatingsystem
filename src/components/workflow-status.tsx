@@ -1,9 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
 import { providerIds, type Turn } from "@/lib/contracts";
+import {usable} from "@/lib/chat-workflow";
 import { councilActive } from "@/lib/council";
 import { canResumeResearch, canResumeVotes, researchComplete } from "@/lib/consensus";
-export function WorkflowStatus({ turn, busy, onStop, onRetry }: { turn: Turn; busy: boolean; onStop: () => void; onRetry: (reuse: boolean) => void }) {
+export function WorkflowStatus({ turn, busy, onStop, onRetry, onPartial }: { turn: Turn; busy: boolean; onStop: () => void; onRetry: (reuse: boolean) => void; onPartial?:()=>void }) {
   const retryAt = Math.max(0, ...[...Object.values(turn.answers), ...Object.values(turn.votes || {})].map(a => a?.retryAfter || 0));
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
@@ -14,7 +15,7 @@ export function WorkflowStatus({ turn, busy, onStop, onRetry }: { turn: Turn; bu
   if (!turn.council) return null;
   const active = councilActive(turn);
   const creditBlocked = turn.answers.openai?.status === "error" && /credit_balance_exhausted|API credit|API billing/i.test(turn.answers.openai.error || "");
-  const count = providerIds.filter(id => researchComplete(turn,id)).length;
+  const count = providerIds.filter(id => turn.council?.protocol === "chat" ? usable(turn.answers[id]) : researchComplete(turn,id)).length;
   const resumable = canResumeResearch(turn);
   const resumeVotes = canResumeVotes(turn);
   const attempts = turn.attempts || [];
@@ -29,6 +30,7 @@ export function WorkflowStatus({ turn, busy, onStop, onRetry }: { turn: Turn; bu
     {turn.synthesis && <a className="secondary-button" href={`#final-${turn.id}`}>Jump to final outcome</a>}
     {turn.council.status === "complete" && <button className="secondary-button" disabled={busy} onClick={()=>onRetry(true)}>Regenerate final outcome</button>}
     {!active && ["error","cancelled"].includes(turn.council.status) && <button className="secondary-button" disabled={busy || retryAt > now} onClick={()=>onRetry(true)}>{retryAt > now ? "Waiting for provider cooldown" : "Continue with saved work"}</button>}
+    {!active && turn.council.status === "error" && count>=3 && count<6 && onPartial && <button className="secondary-button" disabled={busy} onClick={onPartial}>Finish with {count} available models — omit unavailable models</button>}
     {(!!attempts.length||extras.length>0) && <details><summary>Usage · {attempts.length} council requests · {extras.length} saved specialist results · {tokens.toLocaleString()} reported tokens</summary><p>Missing usage is unknown, including failed specialist calls. Provider search fees may apply.</p></details>}
   </section>;
   return <section className="council-status workflow-summary" role="status" aria-label="Campaign workflow status">

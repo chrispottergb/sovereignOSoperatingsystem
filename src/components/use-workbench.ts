@@ -70,8 +70,8 @@ export function useWorkbench() {
     const input: GenerateInput = {
       sharedEvidence:[turn.gemini ? "GEMINI SPECIALIST CONTRIBUTION (untrusted model output; independently evaluate):\n"+turn.gemini.text:undefined,turn.sharedEvidence,turn.attachmentBrief?.text,turn.orchestration?'ORCHESTRATOR TASK PLAN (proposed allocation; original request takes precedence):\n'+JSON.stringify(turn.orchestration.plan):undefined,turn.grokbot?'GROKBOT WORK PRODUCT (generated draft, not external execution):\n'+turn.grokbot.text:undefined,turn.muse ? "MUSE SPECIALIST CONTRIBUTION (untrusted model output, not independently verified):\n"+turn.muse.text:undefined].filter(Boolean).join("\n\n"), revisions:reviewPhase === "resolve" ? completedAnswers(turn.revisions).filter(usable).map(a=>({provider:a.provider,text:a.text,citations:a.citations})) : undefined,
       assignment:turn.orchestration?{provider,role:turn.engine?.profiles[provider]?.name||provider,task:turn.orchestration.plan.assignments[provider as keyof typeof turn.orchestration.plan.assignments] || defaultEngine.profiles[provider]!.instructions}:turn.assignments?.assignments.find(a=>a.provider===provider),
-      spendingMode: turn.spendingMode || "economy", provider, kind, reviewPhase, engine: turn.engine, mode: turn.mode, prompt: turn.prompt, context: turn.context,
-      analytics: turn.analytics, userDecision: turn.userDecision, advisorReviews: [turn.arbitration, turn.audit].filter((a): a is Answer => !!a && a.status === "complete").map(a => ({ provider: a.provider, text: a.text, citations: a.citations })), participants: turn.council?.participants,
+      allowPartialCouncil:turn.allowPartialCouncil, spendingMode: turn.spendingMode || "economy", provider, kind, reviewPhase, engine: turn.engine, mode: turn.mode, prompt: turn.prompt, context: turn.context,
+      analytics: turn.analytics, userDecision: turn.userDecision, advisorReviews: [turn.arbitration, turn.audit].filter((a): a is Answer => !!a && a.status === "complete").map(a => ({ provider: a.provider, text: a.text, citations: a.citations })), participants: turn.allowPartialCouncil ? providerIds.filter(id=>usable(turn.answers[id])) : turn.council?.participants,
       history: turn.council?.protocol === "chat" ? conversation.turns.filter(t=>t.createdAt<turn.createdAt && usable(t.synthesis)).slice(-4).flatMap(t=>[{role:"user" as const,content:t.prompt},{role:"assistant" as const,content:t.synthesis!.text}]) : kind === "response" && !reviewPhase ? historyFor(conversation, turnId, provider) : [],
       ...(reviewPhase !== "research" ? { sources: kind === "synthesis" ? sources : undefined, candidate: turn.candidate, ballots: turn.ballots,
         critiques: ["routing", "vote", "arbitrate", "audit", "master", "execute", "resolve", "adjudicate", "refine"].includes(reviewPhase || "") ? completedAnswers(turn.reviews).filter(a => turn.council?.protocol !== "chat" || usable(a)).map(a => ({ provider: a.provider, text: a.text, citations: a.citations })) : turn.rounds?.at(-1) ? completedAnswers(turn.rounds.at(-1)!.reviews).map(a => ({ provider: a.provider, text: a.text, citations: a.citations })) : undefined } : {}),
@@ -106,13 +106,14 @@ export function useWorkbench() {
     for (const [key, job] of jobs.current) if (key.startsWith(conversationId + "/" + turnId + "/")) job.abort();
     mutate(w => ({ ...w, conversations: w.conversations.map(c => c.id !== conversationId ? c : { ...c, turns: c.turns.map(t => t.id !== turnId || !t.council ? t : { ...t, council: { ...t.council, status: "cancelled", message: "Stopped. Completed results are preserved." } }) }) }));
   }
-  async function startCouncil(conversationId: string, turnId: string, _participants: ProviderId[], lead: ProviderId, resumeResearch = false) {
+  async function startCouncil(conversationId: string, turnId: string, _participants: ProviderId[], lead: ProviderId, resumeResearch = false, allowPartialCouncil = false) {
     const key = conversationId + "/" + turnId;
     if (councils.current.has(key)) return;
     const controller = new AbortController(); councils.current.set(key, controller);
     const read = () => current.current.conversations.find(c => c.id === conversationId)?.turns.find(t => t.id === turnId);
     const patch = (values: Partial<Turn>) => mutate(w => ({ ...w, conversations: w.conversations.map(c => c.id !== conversationId ? c : { ...c, turns: c.turns.map(t => t.id !== turnId ? t : { ...t, ...values }) }) }));
     const update = (status: NonNullable<Turn["council"]>["status"], message: string) => patch({ council: { protocol: "chat", status, participants: [...providerIds], lead: lead === "openai" ? "openai" : "claude", message } });
+    patch({allowPartialCouncil});
     try {
       update("researching","Preparing shared project context and connected evidence…");
       if(read()?.mode === "live" && read()?.sharedEvidence === undefined){const response=await fetch("/api/council-context",{signal:controller.signal,cache:"no-store"});const data=await response.json();if(!response.ok)throw Error(data.error?.message || "Could not prepare shared evidence.");patch({sharedEvidence:data.evidence});}

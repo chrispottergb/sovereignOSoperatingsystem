@@ -47,3 +47,9 @@ it("upgrades saved four-member research without repeating their assessments",asy
  await runChatWorkflow({...f.options,resumeResearch:true});
  expect(f.calls.filter(c=>c.endsWith(':research'))).toEqual(['gemini:research','muse:research']);expect(f.calls.filter(c=>c.endsWith(':critique'))).toHaveLength(6);expect(f.calls.at(-1)).toBe('claude:resolve');expect(f.read().council?.status).toBe('complete');
 });
+
+it("finishes with five only after explicit partial-council selection",async()=>{
+ const f=fixture("gemini");await runChatWorkflow(f.options);expect(f.read().council?.status).toBe("error");expect(f.read().council?.message).toContain("Gemini");f.calls.length=0;
+ f.options.patch({allowPartialCouncil:true});await runChatWorkflow({...f.options,resumeResearch:true});
+ expect(f.calls.some(c=>c.startsWith("gemini:"))).toBe(false);expect(f.calls.filter(c=>c.endsWith(":research"))).toHaveLength(0);expect(f.calls.filter(c=>c.endsWith(":critique"))).toHaveLength(5);expect(f.calls.at(-1)).toBe("claude:resolve");expect(f.read().council?.status).toBe("complete");expect(f.read().council?.message).toContain("not a full six-model result");
+});
