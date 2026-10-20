@@ -1,0 +1,12 @@
+import {beforeEach,it,expect,vi} from 'vitest';
+const m=vi.hoisted(()=>({create:vi.fn(),read:vi.fn(),list:vi.fn(),control:vi.fn(),drain:vi.fn(),after:vi.fn()}));
+vi.mock('next/server',()=>({after:m.after}));
+vi.mock('../src/lib/server/engine-store',()=>({engineCreate:m.create,engineRead:m.read,engineList:m.list,engineControl:m.control,engineDrain:m.drain,engineMetrics:vi.fn()}));
+import {POST,GET} from '../src/app/api/engine/route';
+const id='eec077e9-c552-4407-a176-09e4b9f3da38';
+beforeEach(()=>{vi.resetAllMocks();vi.stubEnv('APP_ORIGIN','http://127.0.0.1:3100');vi.stubEnv('APP_LOCAL_ONLY','true');vi.stubEnv('APP_PASSWORD','');});
+const req=(body:unknown,origin='http://127.0.0.1:3100')=>new Request('http://127.0.0.1:3100/api/engine',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify(body)});
+it('rejects cross-origin launch before queue mutation',async()=>{expect((await POST(req({action:'launch',input:{clientId:id,request:'Do work'}},'https://attacker.example'))).status).toBe(403);expect(m.create).not.toHaveBeenCalled();});
+it('protects saved runs behind workspace authentication',async()=>{vi.stubEnv('APP_PASSWORD','a-password-with-sixteen-characters');expect((await GET(new Request('http://127.0.0.1:3100/api/engine?id='+id))).status).toBe(401);expect(m.read).not.toHaveBeenCalled();});
+it('queues one owner-bound run and schedules work after returning its identifier',async()=>{m.create.mockResolvedValue({id,status:'queued'});const r=await POST(req({action:'launch',input:{clientId:id,request:'Do work'}}));expect(r.status).toBe(200);expect(m.create.mock.calls[0][0]).toBe('owner');expect(m.after).toHaveBeenCalledOnce();expect(m.drain).not.toHaveBeenCalled();});
+it('a read never schedules inference',async()=>{m.read.mockResolvedValue({id,status:'queued'});expect((await GET(new Request('http://127.0.0.1:3100/api/engine?id='+id))).status).toBe(200);expect(m.after).not.toHaveBeenCalled();});

@@ -1,5 +1,6 @@
 import {it,expect,vi,afterEach} from 'vitest';
-const mocks=vi.hoisted(()=>({db:vi.fn(),work:vi.fn()}));
+const mocks=vi.hoisted(()=>({db:vi.fn(),work:vi.fn(),engine:vi.fn()}));
+vi.mock('../src/lib/server/engine-store',()=>({engineTick:mocks.engine}));
 vi.mock('../src/lib/server/astra-store',()=>({db:mocks.db}));
 vi.mock('../src/lib/server/bot-worker',()=>({workRun:mocks.work}));
 import {POST,GET} from '../src/app/api/cloud-worker/route';
@@ -12,6 +13,7 @@ it('does not accept the general worker key or expose status without owner authen
 it('verifies a cloud heartbeat without claiming or billing a model stage',async()=>{
  mocks.db.mockResolvedValue([]);const r=await POST(worker('probe'));expect(r.status).toBe(200);expect(await r.json()).toEqual({ok:true,probe:true,modelCalls:0});expect(mocks.db).toHaveBeenCalledTimes(1);expect(mocks.work).not.toHaveBeenCalled();
 });
+it('advances a shared engine stage without dispatching a second legacy job',async()=>{mocks.db.mockResolvedValue([]);mocks.engine.mockResolvedValue(true);const r=await POST(worker('tick'));expect(await r.json()).toMatchObject({kind:'unified_engine'});expect(mocks.engine).toHaveBeenCalledOnce();expect(mocks.work).not.toHaveBeenCalled();});
 it('obeys the database reservation decision for paused, duplicate or exhausted dispatches',async()=>{
  mocks.db.mockResolvedValue([]);expect((await POST(worker('tick'))).status).toBe(200);expect(mocks.db).toHaveBeenCalledTimes(2);expect(mocks.work).not.toHaveBeenCalled();
 });

@@ -3,6 +3,7 @@ import {runCloudBuildTick,cloudBuildConfigured} from './cloud-builds';
 import {db} from './astra-store';
 import {workRun} from './bot-worker';
 import type {RunRow} from '../bots';
+import {engineTick} from './engine-store';
 
 export async function cloudStatus(){
  const [settings,health,dispatches]=await Promise.all([
@@ -15,12 +16,13 @@ export async function cloudStatus(){
   online:Boolean(lastSeen&&Date.now()-Date.parse(lastSeen)<660000),lastSeen,
   dailySteps:settings[0]?.daily_steps??24,stepsReservedToday:dispatches.filter(d=>d.created_at.slice(0,10)===new Date().toISOString().slice(0,10)).length,
   dispatches:dispatches.slice(0,20),cloudBuildsReady:cloudBuildConfigured(),
-  capabilities:['saved_orchestra_workflows','bot_workflows'],
-  limitations:['Main chat still runs in the browser.','Cloud builds create new projects; repository imports and automatic deployment are not enabled.','Step limits are not a dollar spending cap.']};
+  capabilities:['unified_engine_runs','saved_orchestra_workflows','bot_workflows'],
+  limitations:['Unified engine runs are durable; legacy chats still need the browser.','Cloud builds create new projects; repository imports and automatic deployment are not enabled.','Call limits are not a dollar spending cap.']};
 }
 export async function cloudTick(probe=false){
  await db('astra_worker_health?on_conflict=id',{method:'POST',headers:{Prefer:'resolution=merge-duplicates'},body:JSON.stringify({id:'cloud',last_seen:new Date().toISOString()})});
  if(probe)return {ok:true,probe:true,modelCalls:0};
+ if(await engineTick()){return {ok:true,dispatched:true,kind:'unified_engine'};}
  if(await runCloudBuildTick())return {ok:true,dispatched:true,kind:'cloud_build'};
  const claims=await db<{dispatch_id:string;run_id:string}[]>('rpc/astra_claim_cloud_dispatch',{method:'POST',body:'{}'});
  if(!claims.length)return {ok:true,dispatched:false};

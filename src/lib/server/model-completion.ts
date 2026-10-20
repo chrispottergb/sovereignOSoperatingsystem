@@ -4,10 +4,10 @@ import type {Usage} from '../contracts';
 import {adapters} from './providers';
 import {modelFor} from './config';
 import {AppError,publicError} from './errors';
-export function completion(signal:AbortSignal,spendingMode:'economy'|'thorough'='economy'):Complete{return async(provider,prompt,stage)=>{
+export function completion(signal:AbortSignal,spendingMode:'economy'|'thorough'='economy',options:{maxOutputTokens?:number;disableRetries?:boolean}={}):Complete{return async(provider,prompt,stage)=>{
  let response='',model=modelFor(provider),requestedModel='',requestId:string|undefined,tokens:Usage={};let terminal=false;const citations:import('../contracts').Citation[]=[];
  try{
- for await(const event of adapters[provider].stream({provider,prompt,spendingMode,exactPrompt:prompt,reviewPhase:stage==='answer'?'research':stage==='revise'?'refine':stage==='final'?'resolve':'critique',finalEvaluator:stage==='final',reviewOnly:stage!=='answer',mode:'live',kind:'response',context:{projectName:'',notes:''},history:[]},AbortSignal.any([signal,AbortSignal.timeout(180000)]))){
+ for await(const event of adapters[provider].stream({provider,prompt,spendingMode,outputTokenLimit:options.maxOutputTokens,disableRetries:options.disableRetries,exactPrompt:prompt,reviewPhase:stage==='answer'?'research':stage==='revise'?'refine':stage==='final'?'resolve':'critique',finalEvaluator:stage==='final',reviewOnly:stage!=='answer',mode:'live',kind:'response',context:{projectName:'',notes:''},history:[]},AbortSignal.any([signal,AbortSignal.timeout(180000)]))){
   if(event.type==='citations')citations.push(...event.citations);
   if(event.type==='delta')response+=event.text;
   if(event.type==='start'){if(!requestedModel)requestedModel=event.model;model=event.model;requestId=event.requestId;}

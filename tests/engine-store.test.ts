@@ -1,0 +1,16 @@
+import {beforeEach,it,expect,vi} from 'vitest';
+const m=vi.hoisted(()=>({db:vi.fn(),invoke:vi.fn(),registry:vi.fn(),snapshot:vi.fn()}));
+vi.mock('../src/lib/server/astra-store',()=>({db:m.db}));
+vi.mock('../src/lib/server/engine-models',()=>({invokeEngineModel:m.invoke,engineRegistry:m.registry}));
+vi.mock('../src/lib/server/connector-hub',()=>({connectorSnapshot:m.snapshot}));
+import {engineTick,engineControl,engineCreate} from '../src/lib/server/engine-store';
+import {initialEngineState,nextEngineStage} from '../src/lib/server/engine-machine';
+import {engineInput} from '../src/lib/unified-engine';
+const input=engineInput.parse({clientId:'eec077e9-c552-4407-a176-09e4b9f3da38',request:'Ask Grok for a parser.',reporter:'grok',maxCalls:2});
+const fixture=()=>({id:'run',owner:'owner',input,state:initialEngineState(input,['grok','claude']),claim:'claim',status:'running'});
+beforeEach(()=>{vi.resetAllMocks();});
+it('does not invoke a model without a queue claim',async()=>{m.db.mockResolvedValue([]);expect(await engineTick()).toBe(false);expect(m.invoke).not.toHaveBeenCalled();});
+it('daily reservation denial cannot cause inference',async()=>{const run=fixture();m.db.mockResolvedValueOnce([run]).mockResolvedValueOnce(false).mockResolvedValueOnce([run]);expect(await engineTick()).toBe(true);expect(m.invoke).not.toHaveBeenCalled();expect(JSON.parse(m.db.mock.calls[2][1].body).state.calls).toBe(0);});
+it('persists a paid-call reservation before invocation and moves to Boss afterward',async()=>{const run=fixture();m.db.mockResolvedValueOnce([run]).mockResolvedValueOnce(true).mockResolvedValueOnce([run]).mockResolvedValueOnce([]);m.invoke.mockImplementation(async()=>{expect(m.db.mock.calls[1][0]).toBe('rpc/sovereign_reserve_engine');const saved=JSON.parse(m.db.mock.calls[1][1].body);expect(saved.p_state.pending.kind).toBe('report');expect(saved.p_state.calls).toBe(1);return {text:'Working parser',receipt:{model:'grok',family:'xai',elapsedMs:1}};});await engineTick();expect(m.invoke).toHaveBeenCalledOnce();const final=JSON.parse(m.db.mock.calls[2][1].body);expect(final.status).toBe('queued');expect(final.state.phase).toBe('draft');expect(final.state.pending).toBeUndefined();});
+it('resume skips an uncertain pending stage instead of re-billing it',async()=>{const run=fixture(),pending=nextEngineStage(input,run.state);const paused={...run,status:'paused',state:{...run.state,calls:1,pending}};m.db.mockResolvedValueOnce([paused]).mockResolvedValueOnce([]).mockResolvedValueOnce([paused]);await engineControl('owner','run','resume');expect(m.invoke).not.toHaveBeenCalled();const saved=JSON.parse(m.db.mock.calls[1][1].body);expect(saved.state.records[0].error).toContain('not replayed');expect(saved.state.calls).toBe(1);expect(saved.status).toBe('queued');});
+it('launch retries reuse the client-bound run without additional connector or model calls',async()=>{const run=fixture();m.db.mockResolvedValue([run]);expect(await engineCreate('owner',input)).toBe(run);expect(m.snapshot).not.toHaveBeenCalled();expect(m.invoke).not.toHaveBeenCalled();expect(m.registry).not.toHaveBeenCalled();});

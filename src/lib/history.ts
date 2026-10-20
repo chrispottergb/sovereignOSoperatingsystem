@@ -6,6 +6,7 @@ export function restoreWorkspace(raw: string): Workspace {
   const parsed = workspaceSchema.parse(JSON.parse(raw));
   if (new Set(parsed.projects.map(p => p.id)).size !== parsed.projects.length || new Set(parsed.conversations.map(c => c.id)).size !== parsed.conversations.length || parsed.conversations.some(c => !parsed.projects.some(p => p.id === c.projectId))) throw new Error("Invalid workspace relationships.");
   for (const conversation of parsed.conversations) for (const turn of conversation.turns) {
+    if(turn.unified)continue;
     for (const answer of [...Object.values(turn.answers), ...Object.values(turn.reviews ?? {}), ...Object.values(turn.revisions ?? {}), ...Object.values(turn.votes ?? {}), ...Object.values(turn.botRuns ?? {}), ...(turn.arbitration ? [turn.arbitration] : []), ...(turn.audit ? [turn.audit] : []), ...(turn.routing ? [turn.routing] : []), ...(turn.synthesis ? [turn.synthesis] : [])]) if (answer?.status === "streaming") { answer.status = "cancelled"; answer.error = "Interrupted when this workspace closed. Retry to continue."; }
     if (turn.council && ["researching", "routing", "answering", "reviewing", "voting", "planning", "arbitrating", "auditing"].includes(turn.council.status)) { turn.council.status = "cancelled"; turn.council.message = "Review stopped when the workspace closed. Run the review again to continue."; }
   }

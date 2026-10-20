@@ -1,0 +1,11 @@
+import {readFile} from 'node:fs/promises';
+const file=process.argv[2];if(!file)throw Error('Usage: node scripts/compare-engine-benchmarks.mjs results.json (recorded, blindly scored results; no API calls)');
+const rows=JSON.parse(await readFile(file,'utf8'));
+if(!Array.isArray(rows)||!rows.length)throw Error('Supply a nonempty result array.');
+const keys=new Set();
+for(const r of rows){const key=r.taskId+'/'+r.condition;if(!r.taskId||!['astra','fable','engine'].includes(r.condition)||keys.has(key)||typeof r.completed!=='boolean'||!Number.isFinite(r.quality)||r.quality<0||r.quality>100||!Number.isInteger(r.unsupportedClaims)||r.unsupportedClaims<0||!['latencyMs','costUsd'].every(k=>typeof r[k]==='number'&&Number.isFinite(r[k])&&r[k]>=0))throw Error('Invalid, duplicate or unpriced benchmark row.');keys.add(key);}
+const tasks=[...new Set(rows.map(r=>r.taskId))];const paired=tasks.filter(id=>rows.filter(r=>r.taskId===id).length===3);if(!paired.length)throw Error('No complete three-condition comparisons.');
+const mean=(values)=>values.reduce((a,b)=>a+b,0)/values.length;
+const conditions=Object.fromEntries(['astra','fable','engine'].map(condition=>{const selected=rows.filter(r=>r.condition===condition&&paired.includes(r.taskId));return [condition,{quality:mean(selected.map(r=>r.quality)),completionRate:mean(selected.map(r=>Number(r.completed))),unsupportedClaims:mean(selected.map(r=>r.unsupportedClaims)),meanLatencyMs:mean(selected.map(r=>r.latencyMs)),meanCostUsd:mean(selected.map(r=>r.costUsd))}];}));
+const differences=Object.fromEntries(['astra','fable'].map(baseline=>[baseline,{meanQualityDelta:mean(paired.map(taskId=>rows.find(r=>r.taskId===taskId&&r.condition==='engine').quality-rows.find(r=>r.taskId===taskId&&r.condition===baseline).quality)),costRatio:conditions[baseline].meanCostUsd?conditions.engine.meanCostUsd/conditions[baseline].meanCostUsd:null,latencyRatio:conditions[baseline].meanLatencyMs?conditions.engine.meanLatencyMs/conditions[baseline].meanLatencyMs:null}]));
+console.log(JSON.stringify({pairedTasks:paired.length,excludedIncompleteTasks:tasks.filter(id=>!paired.includes(id)),preliminary:paired.length<30,conditions,engineVersusBaseline:differences,notice:'Recorded descriptive comparisons only; not evidence of universal superiority. Preserve matched budgets, task fixtures and blind scoring.'},null,2));

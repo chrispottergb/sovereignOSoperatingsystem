@@ -1,3 +1,7 @@
+import {after} from 'next/server';
+import {engineInput,engineModelSchema} from '@/lib/unified-engine';
+import {engineCreate,engineRead,engineList,engineControl,engineDrain} from '@/lib/server/engine-store';
+import {engineRegistry,hfCompletion} from '@/lib/server/engine-models';
 import {ayaInput} from '@/lib/aya-handoff';
 import {handoffToAya} from '@/lib/server/aya-handoff';
 import {planSymbiosis,runGrokbot} from '@/lib/server/symbiosis';
@@ -16,11 +20,12 @@ import {providerConfig} from '@/lib/server/config';
 import {db,readArtifact,storageReady} from '@/lib/server/astra-store';
 const uuid=z.string().uuid();
 const schema=z.discriminatedUnion('action',[
+ z.object({action:z.literal('engine_launch'),input:engineInput}),z.object({action:z.enum(['engine_read','engine_resume','engine_cancel']),id:uuid}),z.object({action:z.literal('engine_list')}),
  z.object({action:z.literal('handoff_to_aya'),input:ayaInput}).strict(),
  z.object({action:z.literal('symbiosis_plan'),input:symbiosisInput}),z.object({action:z.literal('grokbot'),input:symbiosisInput.extend({brief:z.string().min(1).max(1800)})}),
  z.object({action:z.literal('attachment_upload'),input:uploadInput}),z.object({action:z.literal('attachment_inspect'),ids:z.array(uuid).min(1).max(4),prompt:z.string().min(1).max(12000)}),
  z.object({action:z.literal('gemini_advise'),input:geminiInput}),z.object({action:z.literal('muse_probe')}),z.object({action:z.literal('muse_advise'),input:museInput}),
- z.object({action:z.literal('model'),provider:z.enum(['openai','claude','perplexity','grok','gemini','muse']),stage:z.enum(['answer','review','revise','final']),spendingMode:z.enum(['economy','thorough']).default('economy'),prompt:z.string().min(1).max(290000)}),
+ z.object({action:z.literal('model'),provider:engineModelSchema,stage:z.enum(['answer','review','revise','final']),spendingMode:z.enum(['economy','thorough']).default('economy'),prompt:z.string().min(1).max(290000)}),
  z.object({action:z.literal('list_specialists')}),z.object({action:z.literal('generate_music'),input:z.unknown()}),z.object({action:z.literal('read_specialist_job'),id:uuid}),z.object({action:z.literal('toggle_specialist'),enabled:z.boolean()}),
  z.object({action:z.literal('capabilities')}),z.object({action:z.literal('list_connectors')}),
  z.object({action:z.literal('read_connectors'),ids:z.array(uuid).max(20)}),
@@ -31,6 +36,10 @@ export const maxDuration=300;
 export async function POST(request:Request){try{
  if(!process.env.WORKER_SECRET||!constantEqual(request.headers.get('authorization')||'','Bearer '+process.env.WORKER_SECRET))throw new AppError('FORBIDDEN','MCP gateway authorization required.',403);
  limiter.take('mcp-gateway',60,60000);const parsed=schema.safeParse(await readJsonLimited(request,2000000));if(!parsed.success)throw new AppError('VALIDATION','Invalid MCP gateway request.',400);const v=parsed.data;
+ if(v.action==='engine_launch'){const run=await engineCreate('owner',v.input);after(()=>engineDrain(run.id));return Response.json({run});}
+ if(v.action==='engine_list')return Response.json({runs:await engineList('owner')});
+ if(v.action==='engine_read')return Response.json({run:await engineRead('owner',v.id)});
+ if(v.action==='engine_resume'||v.action==='engine_cancel'){const run=await engineControl('owner',v.id,v.action==='engine_resume'?'resume':'cancel');if(run.status==='queued')after(()=>engineDrain(run.id));return Response.json({run});}
  if(v.action==='handoff_to_aya')return Response.json(await handoffToAya(v.input),{headers:{'Cache-Control':'no-store'}});
  if(v.action==='symbiosis_plan')return Response.json(await planSymbiosis(v.input,request.signal),{headers:{'Cache-Control':'no-store'}});
  if(v.action==='grokbot')return Response.json(await runGrokbot(v.input,request.signal),{headers:{'Cache-Control':'no-store'}});
@@ -39,12 +48,12 @@ export async function POST(request:Request){try{
  if(v.action==='gemini_advise')return Response.json(await askGemini(v.input,request.signal));
  if(v.action==='muse_probe')return Response.json(await askMuse({prompt:'Reply with exactly CONNECTED.'},request.signal,true));
  if(v.action==='muse_advise')return Response.json(await askMuse(v.input,request.signal));
- if(v.action==='model'){if(v.stage==='final'&&!['claude','openai'].includes(v.provider))throw new AppError('VALIDATION','Final evaluator must be Claude or OpenAI.',400);return Response.json(await completion(request.signal,v.spendingMode)(v.provider,v.prompt,v.stage));}
+ if(v.action==='model'){if(v.stage==='final'&&!['claude','openai'].includes(v.provider))throw new AppError('VALIDATION','Final evaluator must be Claude or OpenAI.',400);return Response.json(v.provider.includes('/')?await hfCompletion(v.provider,v.prompt,request.signal):await completion(request.signal,v.spendingMode)(v.provider as import('@/lib/contracts').ProviderId,v.prompt,v.stage));}
  if(v.action==='list_specialists')return Response.json(await listSpecialists());
  if(v.action==='generate_music')return Response.json(await queueMusic(v.input));
  if(v.action==='read_specialist_job')return Response.json({jobs:await specialistJobs(v.id)});
  if(v.action==='toggle_specialist')return Response.json(await toggleSpecialist(v.enabled));
- if(v.action==='capabilities')return Response.json({providers:providerConfig(),muse:museConfig(),gemini:geminiConfig(),storage:storageReady()?'configured':'not_configured',cloudEnabled:false});
+ if(v.action==='capabilities')return Response.json({engineRegistry:engineRegistry(),providers:providerConfig(),muse:museConfig(),gemini:geminiConfig(),storage:storageReady()?'configured':'not_configured',cloudEnabled:false});
  if(v.action==='list_connectors')return Response.json({configured:true,connectors:await db('astra_connectors?select=id,provider,label,enabled,permissions&order=created_at.desc')});
  if(v.action==='read_connectors')return Response.json(await connectorSnapshot(v.ids));
  if(v.action==='toggle_connector'){const rows=await db<unknown[]>(`astra_connectors?id=eq.${v.id}`,{method:'PATCH',body:JSON.stringify({enabled:v.enabled,models:['openai','claude','perplexity','grok','gemini','muse']})});if(!rows.length)throw new AppError('NOT_FOUND','Connector not found.',404);return Response.json({id:v.id,enabled:v.enabled,models:['openai','claude','perplexity','grok','gemini','muse']});}

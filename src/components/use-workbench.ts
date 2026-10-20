@@ -1,4 +1,5 @@
 "use client";
+import type {EngineRun} from "@/lib/unified-engine";
 import {hfReportSchema,type HfModel} from "@/lib/huggingface";
 import {requestedReporter} from "@/lib/requested-reporter";
 import {requestDeadline,interruptedRequest} from "@/lib/request-deadline";
@@ -26,6 +27,20 @@ export function useWorkbench() {
     if (!mounted.current) return;
     current.current = update(current.current); setWorkspace(current.current);
   }, []);
+  const applyEngineRun=useCallback((conversationId:string,turnId:string,run:EngineRun)=>{
+    const complete=run.status==='complete',paused=run.status==='paused',cancelled=run.status==='cancelled';
+    mutate(w=>({...w,conversations:w.conversations.map(c=>c.id!==conversationId?c:{...c,turns:c.turns.map(t=>t.id!==turnId?t:{...t,engineRunId:run.id,council:{protocol:'chat',participants:[],lead:run.input.editor,status:complete?'complete':paused?'error':cancelled?'cancelled':run.state.phase==='review'?'reviewing':'researching',message:complete?'One Sovereign outcome is ready. Execution choices remain held.':paused?'A call was interrupted. Continue skips that uncertain call; it will not be charged again automatically.':cancelled?'Stopped. Completed stages are preserved.':`Saved engine · ${run.state.phase} · ${run.state.calls}/${run.input.maxCalls} calls reserved. You can close this tab.`},...(complete?{synthesis:{provider:run.input.editor,status:'complete',text:run.state.final||'No usable result was saved. Open process details.',citations:[],finishReason:'stop',model:'Sovereign Engine'}}:{})})})}));
+  },[mutate]);
+  useEffect(()=>{
+    if(!loaded)return;let active=true,running=false;
+    const poll=async()=>{if(running)return;running=true;try{
+      for(const c of current.current.conversations)for(const t of c.turns){
+        if(!active||!t.engineRunId||['complete','cancelled','error'].includes(t.council?.status||''))continue;
+        const r=await fetch('/api/engine?id='+t.engineRunId,{cache:'no-store'});if(!r.ok)continue;const {run}=await r.json();if(active)applyEngineRun(c.id,t.id,run);
+        if(active&&run.status==='queued')await fetch('/api/engine',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'advance',id:run.id})});
+      }
+    }catch{}finally{running=false;}};void poll();const timer=setInterval(poll,8000);return()=>{active=false;clearInterval(timer);};
+  },[loaded,applyEngineRun]);
   useEffect(() => {
     mounted.current = true;
     let active = true;
@@ -108,6 +123,8 @@ export function useWorkbench() {
   const cancel = (conversationId: string, turnId: string, provider: ProviderId, synthesis = false) => jobs.current.get(`${conversationId}/${turnId}/${synthesis ? "synthesis" : provider}`)?.abort();
   const cancelConversation = (id: string) => { for (const [key, controller] of councils.current) if (key.startsWith(id + "/")) controller.abort(); for (const [key, job] of jobs.current) if (key.startsWith(`${id}/`)) job.abort(); };
   function stopCouncil(conversationId: string, turnId: string) {
+    const saved=current.current.conversations.find(c=>c.id===conversationId)?.turns.find(t=>t.id===turnId);
+    if(saved?.engineRunId)void fetch("/api/engine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"cancel",id:saved.engineRunId})});
     councils.current.get(conversationId + "/" + turnId)?.abort();
     for (const [key, job] of jobs.current) if (key.startsWith(conversationId + "/" + turnId + "/")) job.abort();
     mutate(w => ({ ...w, conversations: w.conversations.map(c => c.id !== conversationId ? c : { ...c, turns: c.turns.map(t => t.id !== turnId || !t.council ? t : { ...t, council: { ...t.council, status: "cancelled", message: "Stopped. Completed results are preserved." } }) }) }));
@@ -121,6 +138,12 @@ export function useWorkbench() {
     const update = (status: NonNullable<Turn["council"]>["status"], message: string) => patch({ council: { protocol: "chat", status, participants: read()?.hfModel ? [] : read()?.singleReporter ? [read()!.singleReporter!] : [...providerIds], lead: lead === "openai" ? "openai" : "claude", message } });
     patch({allowPartialCouncil:allowPartialCouncil ?? (resumeResearch ? read()?.allowPartialCouncil : false)});
     try {
+      if(read()?.unified){
+        const turn=read()!;
+        update("researching","Saved engine: assigning complementary work, then Astra/Fable review…");
+        const body=turn.engineRunId?{action:'resume',id:turn.engineRunId}:{action:'launch',input:{clientId:turn.id,projectId:current.current.conversations.find(c=>c.id===conversationId)?.projectId||'personal',request:turn.prompt,context:JSON.stringify({project:turn.context,attachments:turn.attachmentBrief?.text,conversation:current.current.conversations.find(c=>c.id===conversationId)?.turns.filter(t=>t.createdAt<turn.createdAt&&usable(t.synthesis)).slice(-1).map(t=>({request:t.prompt.slice(0,2000),answer:t.synthesis!.text.slice(0,4000),excerpt:t.prompt.length>2000||t.synthesis!.text.length>4000}))}),reporter:turn.hfModel||turn.singleReporter,editor:lead,depth:turn.spendingMode||'economy',maxCalls:turn.hfModel||turn.singleReporter?2:turn.spendingMode==='thorough'?24:14}};
+        const response=await fetch('/api/engine',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await response.json();if(!response.ok)throw Error(data.error?.message||'Could not save the engine run.');patch({engineRunId:data.run.id});applyEngineRun(conversationId,turnId,data.run);return;
+      }
       update("researching","Preparing shared project context and connected evidence…");
       if(read()?.mode === "live" && read()?.sharedEvidence === undefined){const response=await fetch("/api/council-context",{signal:AbortSignal.any([controller.signal,AbortSignal.timeout(45000)]),cache:"no-store"});const data=await response.json();if(!response.ok)throw Error(data.error?.message || "Could not prepare shared evidence.");patch({sharedEvidence:data.evidence});}
       if(read()?.hfModel){
@@ -164,11 +187,11 @@ export function useWorkbench() {
       patch({ council: { ...turn.council, status: done ? "complete" : "error", message: done ? "Owner decision recorded after Astra and Fable review. Locked tasks are ready for manual workspace triggers." : "The final plan did not complete. Bot triggers remain disabled." } });
     } finally { if (councils.current.get(key) === controller) councils.current.delete(key); }
   }
-  function submit(prompt: string, projectId: string, conversationId: string | undefined, selected: ProviderId[], mode: "live" | "demo", lead?: ProviderId, spendingMode: SpendingMode = "economy", attachmentBrief?:AttachmentBrief, symbiosis = true, hfModel?:HfModel) {
+  function submit(prompt: string, projectId: string, conversationId: string | undefined, selected: ProviderId[], mode: "live" | "demo", lead?: ProviderId, spendingMode: SpendingMode = "economy", attachmentBrief?:AttachmentBrief, symbiosis = true, hfModel?:HfModel, unified=false) {
     const project = current.current.projects.find(p => p.id === projectId); if (!project) return;
     const id = conversationId || crypto.randomUUID();
     const singleReporter=lead?requestedReporter(prompt,selected):undefined;
-    const turn: Turn = { hfModel, singleReporter:hfModel?undefined:singleReporter, symbiosis:!hfModel&&!singleReporter&&mode==='live'&&Boolean(lead)&&symbiosis, attachmentBrief, spendingMode, id: crypto.randomUUID(), prompt, createdAt: Date.now(), mode, context: { projectName: project.name, notes: project.notes }, engine: current.current.engine || defaultEngine, analytics: current.current.analytics, answers: {} };
+    const turn: Turn = { unified:unified&&mode==='live'&&Boolean(lead), hfModel, singleReporter:hfModel?undefined:singleReporter, symbiosis:!hfModel&&!singleReporter&&mode==='live'&&Boolean(lead)&&symbiosis, attachmentBrief, spendingMode, id: crypto.randomUUID(), prompt, createdAt: Date.now(), mode, context: { projectName: project.name, notes: project.notes }, engine: current.current.engine || defaultEngine, analytics: current.current.analytics, answers: {} };
     mutate(w => {
       const existing = w.conversations.find(c => c.id === id);
       const conversation: Conversation = existing ? { ...existing, updatedAt: Date.now(), turns: [...existing.turns, turn] } : { id, projectId, title: prompt.slice(0, 70), createdAt: Date.now(), updatedAt: Date.now(), turns: [turn] };
@@ -178,7 +201,14 @@ export function useWorkbench() {
     else for (const provider of selected) void run(id, turn.id, provider);
     return id;
   }
-  return { workspace, loaded, storageError, mutate, run, cancel, cancelConversation, submit, startCouncil, stopCouncil, approveResolution };
+  function openEngineRun(run:EngineRun){
+    const existing=current.current.conversations.find(c=>c.turns.some(t=>t.engineRunId===run.id));
+    if(existing){const turn=existing.turns.find(t=>t.engineRunId===run.id)!;applyEngineRun(existing.id,turn.id,run);return existing.id;}
+    const id=crypto.randomUUID(),turnId=run.input.clientId;
+    const turn:Turn={id:turnId,unified:true,engineRunId:run.id,prompt:run.input.request,createdAt:Date.parse(run.created_at),mode:'live',context:{projectName:'Saved engine run',notes:''},answers:{}};
+    mutate(w=>({...w,conversations:[{id,projectId:w.projects[0].id,title:run.input.request.slice(0,70),createdAt:Date.parse(run.created_at),updatedAt:Date.now(),turns:[turn]},...w.conversations]}));applyEngineRun(id,turnId,run);return id;
+  }
+  return {openEngineRun, workspace, loaded, storageError, mutate, run, cancel, cancelConversation, submit, startCouncil, stopCouncil, approveResolution };
 }
 
 
