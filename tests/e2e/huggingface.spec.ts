@@ -1,0 +1,9 @@
+import {test,expect} from '@playwright/test';
+test('HF report is reused when Boss fails and only Boss answer is shown',async({page})=>{
+ let reports=0,boss=0,extras=0;
+ await page.route('**/api/config',r=>r.fulfill({json:{huggingface:{configured:true},providers:['openai','claude','perplexity','grok','gemini','muse'].map(id=>({id,name:id,configured:id==='claude',model:'fixture'})),authenticated:true,authRequired:false,demoEnabled:false}}));
+ await page.route('**/api/council-context',r=>r.fulfill({json:{evidence:''}}));
+ await page.route('**/api/generate',r=>{extras++;return r.fulfill({status:500});});
+ await page.route('**/api/huggingface',r=>{const data=r.request().postDataJSON();if(data.phase==='report'){reports++;return r.fulfill({json:{report:{model:data.model,reportedModel:data.model,text:'Private HF report',completedAt:1,inputTokens:10,outputTokens:20}}});}boss++;if(boss===1)return r.fulfill({status:502,json:{error:{message:'Boss interrupted'}}});return r.fulfill({json:{text:'Here is the actionable HF outcome.\n```boss-actions\n{"options":[]}\n```',model:'fixture',usage:{}}});});
+ await page.goto('/');await page.getByLabel('Hugging Face specialist').selectOption('zai-org/GLM-5.3');await page.getByLabel('Your prompt').fill('Plan the parser');await page.getByRole('button',{name:'Send prompt',exact:true}).click();await expect(page.getByRole('heading',{name:'Final outcome needs attention'})).toBeVisible();await page.getByRole('button',{name:'Continue with saved work'}).click();await expect(page.getByRole('heading',{name:'Final outcome',exact:true})).toBeVisible();await expect(page.getByRole('article',{name:'SovereignOS response'})).toContainText('actionable HF outcome');expect(reports).toBe(1);expect(boss).toBe(2);expect(extras).toBe(0);await expect(page.getByText('Private HF report',{exact:true})).not.toBeVisible();
+});

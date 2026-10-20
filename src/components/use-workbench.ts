@@ -1,4 +1,5 @@
 "use client";
+import {hfReportSchema,type HfModel} from "@/lib/huggingface";
 import {requestedReporter} from "@/lib/requested-reporter";
 import {requestDeadline,interruptedRequest} from "@/lib/request-deadline";
 import {symbiosisPlanSchema} from '@/lib/symbiosis';
@@ -117,11 +118,22 @@ export function useWorkbench() {
     const controller = new AbortController(); councils.current.set(key, controller);
     const read = () => current.current.conversations.find(c => c.id === conversationId)?.turns.find(t => t.id === turnId);
     const patch = (values: Partial<Turn>) => mutate(w => ({ ...w, conversations: w.conversations.map(c => c.id !== conversationId ? c : { ...c, turns: c.turns.map(t => t.id !== turnId ? t : { ...t, ...values }) }) }));
-    const update = (status: NonNullable<Turn["council"]>["status"], message: string) => patch({ council: { protocol: "chat", status, participants: read()?.singleReporter ? [read()!.singleReporter!] : [...providerIds], lead: lead === "openai" ? "openai" : "claude", message } });
+    const update = (status: NonNullable<Turn["council"]>["status"], message: string) => patch({ council: { protocol: "chat", status, participants: read()?.hfModel ? [] : read()?.singleReporter ? [read()!.singleReporter!] : [...providerIds], lead: lead === "openai" ? "openai" : "claude", message } });
     patch({allowPartialCouncil:allowPartialCouncil ?? (resumeResearch ? read()?.allowPartialCouncil : false)});
     try {
       update("researching","Preparing shared project context and connected evidence…");
       if(read()?.mode === "live" && read()?.sharedEvidence === undefined){const response=await fetch("/api/council-context",{signal:AbortSignal.any([controller.signal,AbortSignal.timeout(45000)]),cache:"no-store"});const data=await response.json();if(!response.ok)throw Error(data.error?.message || "Could not prepare shared evidence.");patch({sharedEvidence:data.evidence});}
+      if(read()?.hfModel){
+        const turn=read()!;
+        const call=async(phase:'report'|'boss')=>{const response=await fetch('/api/huggingface',{method:'POST',headers:{'Content-Type':'application/json'},signal:AbortSignal.any([controller.signal,AbortSignal.timeout(190000)]),body:JSON.stringify({phase,model:turn.hfModel,prompt:turn.prompt,editor:lead,context:JSON.stringify({project:turn.context,evidence:turn.sharedEvidence,attachments:turn.attachmentBrief?.text}).slice(0,40000),report:read()?.hfReport})});const data=await response.json();if(!response.ok)throw Error(data.error?.message||'Specialist stage failed.');return data;};
+        if(!turn.hfReport){update('researching','The selected Hugging Face model is preparing its report…');const data=await call('report');patch({hfReport:hfReportSchema.parse(data.report)});}
+        if(controller.signal.aborted)return;
+        update('planning','Boss is reviewing the specialist report and preparing one answer…');
+        patch({previousSynthesis:usable(turn.synthesis)?turn.synthesis:turn.previousSynthesis,synthesis:{provider:lead,status:'streaming',text:'',citations:[]}});
+        try{const data=await call('boss');patch({synthesis:{provider:lead,status:'complete',text:data.text,model:data.model,usage:data.usage,finishReason:'stop',citations:[]}});update('complete','Boss answer ready. Hugging Face report saved in process details.');}
+        catch(e){patch({synthesis:{provider:lead,status:controller.signal.aborted?'cancelled':'error',text:'',citations:[],error:e instanceof Error?e.message:'Boss review interrupted.'}});throw e;}
+        return;
+      }
       if(read()?.mode === "live" && read()?.symbiosis && !read()?.orchestration){
         update('researching','Preparing specialist prompts and assigning the council’s work…');const turn=read()!;
         const response=await fetch('/api/symbiosis',{method:'POST',headers:{'Content-Type':'application/json'},signal:AbortSignal.any([controller.signal,AbortSignal.timeout(180000)]),body:JSON.stringify({action:'plan',input:{prompt:turn.prompt,context:JSON.stringify({finalEditor:lead,project:turn.context,evidence:turn.sharedEvidence,attachments:turn.attachmentBrief?.text,priorConversation:current.current.conversations.find(c=>c.id===conversationId)?.turns.filter(t=>t.createdAt<turn.createdAt&&usable(t.synthesis)).slice(-2).map(t=>({request:t.prompt.slice(0,2000),answer:t.synthesis!.text.slice(0,4000),excerpt:t.prompt.length>2000||t.synthesis!.text.length>4000}))}),forceMuse:false}})});
@@ -152,11 +164,11 @@ export function useWorkbench() {
       patch({ council: { ...turn.council, status: done ? "complete" : "error", message: done ? "Owner decision recorded after Astra and Fable review. Locked tasks are ready for manual workspace triggers." : "The final plan did not complete. Bot triggers remain disabled." } });
     } finally { if (councils.current.get(key) === controller) councils.current.delete(key); }
   }
-  function submit(prompt: string, projectId: string, conversationId: string | undefined, selected: ProviderId[], mode: "live" | "demo", lead?: ProviderId, spendingMode: SpendingMode = "economy", attachmentBrief?:AttachmentBrief, symbiosis = true) {
+  function submit(prompt: string, projectId: string, conversationId: string | undefined, selected: ProviderId[], mode: "live" | "demo", lead?: ProviderId, spendingMode: SpendingMode = "economy", attachmentBrief?:AttachmentBrief, symbiosis = true, hfModel?:HfModel) {
     const project = current.current.projects.find(p => p.id === projectId); if (!project) return;
     const id = conversationId || crypto.randomUUID();
     const singleReporter=lead?requestedReporter(prompt,selected):undefined;
-    const turn: Turn = { singleReporter, symbiosis:!singleReporter&&mode==='live'&&Boolean(lead)&&symbiosis, attachmentBrief, spendingMode, id: crypto.randomUUID(), prompt, createdAt: Date.now(), mode, context: { projectName: project.name, notes: project.notes }, engine: current.current.engine || defaultEngine, analytics: current.current.analytics, answers: {} };
+    const turn: Turn = { hfModel, singleReporter:hfModel?undefined:singleReporter, symbiosis:!hfModel&&!singleReporter&&mode==='live'&&Boolean(lead)&&symbiosis, attachmentBrief, spendingMode, id: crypto.randomUUID(), prompt, createdAt: Date.now(), mode, context: { projectName: project.name, notes: project.notes }, engine: current.current.engine || defaultEngine, analytics: current.current.analytics, answers: {} };
     mutate(w => {
       const existing = w.conversations.find(c => c.id === id);
       const conversation: Conversation = existing ? { ...existing, updatedAt: Date.now(), turns: [...existing.turns, turn] } : { id, projectId, title: prompt.slice(0, 70), createdAt: Date.now(), updatedAt: Date.now(), turns: [turn] };
@@ -168,4 +180,5 @@ export function useWorkbench() {
   }
   return { workspace, loaded, storageError, mutate, run, cancel, cancelConversation, submit, startCouncil, stopCouncil, approveResolution };
 }
+
 
