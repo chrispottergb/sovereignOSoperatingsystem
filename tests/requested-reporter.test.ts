@@ -1,0 +1,7 @@
+import {it,expect} from 'vitest';
+import {requestedReporter} from '../src/lib/requested-reporter';
+import {generateSchema,providerIds} from '../src/lib/contracts';
+it('recognizes direct delegation and selected models without matching topic mentions',()=>{expect(requestedReporter('Ask Perplexity to research this, then Boss review', [...providerIds])).toBe('perplexity');expect(requestedReporter('Grok, report on this',[...providerIds])).toBe('grok');expect(requestedReporter('Compare Gemini with Claude',[...providerIds])).toBeUndefined();expect(requestedReporter('Ask Grok and Gemini to research',[...providerIds])).toBeUndefined();expect(requestedReporter('Research this',['muse'])).toBe('muse');});
+const base={singleReporter:'grok',provider:'claude',kind:'synthesis',mode:'live',prompt:'Ask Grok to report',context:{projectName:'',notes:''},participants:['grok'],reviewPhase:'resolve',spendingMode:'thorough',sources:[{provider:'grok',text:'Report',citations:[]}]};
+it('accepts Boss review of one report without peer reviews or corrections',()=>{expect(generateSchema.safeParse(base).success).toBe(true);});
+it('rejects mismatched sources, peer stages and unauthorized final editors',()=>{for(const override of [{sources:[{provider:'gemini',text:'Wrong report'}]},{reviewPhase:'critique'},{provider:'muse'},{allowPartialCouncil:true}])expect(generateSchema.safeParse({...base,...override}).success).toBe(false);});

@@ -43,3 +43,6 @@ Unit tests cover schema failures, risk escalation, split ownership, authenticate
 Production baseline: dpl_HmwtC3o6mrd99zLqkq794F4CUrgD (70ce826).
 Browser stages now have a 290-second deadline and stop on their first terminal event. Context and optional orchestration have bounded deadlines. Approved reduced-council mode persists on retries. Completed answers remain available during a replacement final attempt.
 Malformed action menus can be repaired separately through an explicit paid-call button. The authenticated repair route validates the result and never dispatches or releases tasks. Selection/GO and manual packet handoffs remain separate from execution. A model failure remains visible and resumable, never represented as completed consensus. Browser orchestration still requires the tab to stay open.
+
+## Requested-model reports (2026-10-19)
+In combined-answer mode, selecting one model or directly addressing/delegating to one model routes only that report to the selected Boss final editor. No peer rounds, correction rounds, or automatic specialist orchestration run. The report remains in collapsed process details; Boss supplies the actionable answer and held choices. Retry reuses a completed report. Merely mentioning a provider as a research subject does not select it. Use the visible model selector for unambiguous routing.

@@ -10,6 +10,17 @@ export async function runChatWorkflow(o: {
  if(signal.aborted) return;
  if(!o.resumeResearch) patch({answers:{},reviews:{},revisions:{}});
  patch({candidate:undefined,ballots:undefined,votes:undefined,rounds:undefined,routing:undefined,assignments:undefined,lockedAt:undefined,arbitration:undefined,audit:undefined,userDecision:undefined,botRuns:undefined});
+ const reporter=read()?.singleReporter;
+ if(reporter){
+  update("researching",`${providers[reporter].name} is preparing the requested report for Boss…`);
+  if(!usable(read()?.answers[reporter]))await run(reporter,"research");
+  if(signal.aborted)return;
+  if(!usable(read()?.answers[reporter])){update("error",`${providers[reporter].name} did not finish. Retry preserves saved work; no other models will be substituted.`);return;}
+  update("planning","Boss is checking the requested report and preparing one actionable answer…");
+  await run(read()?.council?.lead==="openai"?"openai":"claude","resolve");
+  if(signal.aborted)return;
+  update(usable(read()?.synthesis)?"complete":"error",usable(read()?.synthesis)?"Boss answer ready. The requested model report is saved in process details.":read()?.synthesis?.error||"Boss review did not finish. Retry reuses the saved report.");return;
+ }
  update("researching","Six models are independently answering your original request…");
  const partial=read()?.allowPartialCouncil===true && o.resumeResearch;
  const pending=partial?[]:providerIds.filter(id=>!usable(read()?.answers[id]));
@@ -40,3 +51,4 @@ export async function runChatWorkflow(o: {
  const missing=providerIds.filter(id=>!usable(read()?.answers[id]) || !usable(read()?.reviews?.[id]));
  update("complete",missing.length ? `Answer ready using ${available.length} models. Unavailable: ${missing.map(id=>providers[id].name).join(", ")}. This is not a full six-model result.` : "Answer ready. Research and peer review are saved in the process details.");
 }
+

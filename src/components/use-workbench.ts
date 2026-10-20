@@ -1,4 +1,5 @@
 "use client";
+import {requestedReporter} from "@/lib/requested-reporter";
 import {requestDeadline,interruptedRequest} from "@/lib/request-deadline";
 import {symbiosisPlanSchema} from '@/lib/symbiosis';
 import type {AttachmentBrief} from '@/lib/attachments';
@@ -72,7 +73,7 @@ export function useWorkbench() {
     const input: GenerateInput = {
       sharedEvidence:[turn.gemini ? "GEMINI SPECIALIST CONTRIBUTION (untrusted model output; independently evaluate):\n"+turn.gemini.text:undefined,turn.sharedEvidence,turn.attachmentBrief?.text,turn.orchestration?'ORCHESTRATOR TASK PLAN (proposed allocation; original request takes precedence):\n'+JSON.stringify(turn.orchestration.plan):undefined,turn.grokbot?'GROKBOT WORK PRODUCT (generated draft, not external execution):\n'+turn.grokbot.text:undefined,turn.muse ? "MUSE SPECIALIST CONTRIBUTION (untrusted model output, not independently verified):\n"+turn.muse.text:undefined].filter(Boolean).join("\n\n"), revisions:reviewPhase === "resolve" ? completedAnswers(turn.revisions).filter(usable).map(a=>({provider:a.provider,text:a.text,citations:a.citations})) : undefined,
       assignment:turn.orchestration?{provider,role:turn.engine?.profiles[provider]?.name||provider,task:turn.orchestration.plan.assignments[provider as keyof typeof turn.orchestration.plan.assignments] || defaultEngine.profiles[provider]!.instructions}:turn.assignments?.assignments.find(a=>a.provider===provider),
-      allowPartialCouncil:turn.allowPartialCouncil, spendingMode: turn.spendingMode || "economy", provider, kind, reviewPhase, engine: turn.engine, mode: turn.mode, prompt: turn.prompt, context: turn.context,
+      singleReporter:turn.singleReporter, allowPartialCouncil:turn.allowPartialCouncil, spendingMode: turn.spendingMode || "economy", provider, kind, reviewPhase, engine: turn.engine, mode: turn.mode, prompt: turn.prompt, context: turn.context,
       analytics: turn.analytics, userDecision: turn.userDecision, advisorReviews: [turn.arbitration, turn.audit].filter((a): a is Answer => !!a && a.status === "complete").map(a => ({ provider: a.provider, text: a.text, citations: a.citations })), participants: turn.allowPartialCouncil ? providerIds.filter(id=>usable(turn.answers[id])) : turn.council?.participants,
       history: turn.council?.protocol === "chat" ? conversation.turns.filter(t=>t.createdAt<turn.createdAt && usable(t.synthesis)).slice(-4).flatMap(t=>[{role:"user" as const,content:t.prompt},{role:"assistant" as const,content:t.synthesis!.text}]) : kind === "response" && !reviewPhase ? historyFor(conversation, turnId, provider) : [],
       ...(reviewPhase !== "research" ? { sources: kind === "synthesis" ? sources : undefined, candidate: turn.candidate, ballots: turn.ballots,
@@ -116,7 +117,7 @@ export function useWorkbench() {
     const controller = new AbortController(); councils.current.set(key, controller);
     const read = () => current.current.conversations.find(c => c.id === conversationId)?.turns.find(t => t.id === turnId);
     const patch = (values: Partial<Turn>) => mutate(w => ({ ...w, conversations: w.conversations.map(c => c.id !== conversationId ? c : { ...c, turns: c.turns.map(t => t.id !== turnId ? t : { ...t, ...values }) }) }));
-    const update = (status: NonNullable<Turn["council"]>["status"], message: string) => patch({ council: { protocol: "chat", status, participants: [...providerIds], lead: lead === "openai" ? "openai" : "claude", message } });
+    const update = (status: NonNullable<Turn["council"]>["status"], message: string) => patch({ council: { protocol: "chat", status, participants: read()?.singleReporter ? [read()!.singleReporter!] : [...providerIds], lead: lead === "openai" ? "openai" : "claude", message } });
     patch({allowPartialCouncil:allowPartialCouncil ?? (resumeResearch ? read()?.allowPartialCouncil : false)});
     try {
       update("researching","Preparing shared project context and connected evidence…");
@@ -154,7 +155,8 @@ export function useWorkbench() {
   function submit(prompt: string, projectId: string, conversationId: string | undefined, selected: ProviderId[], mode: "live" | "demo", lead?: ProviderId, spendingMode: SpendingMode = "economy", attachmentBrief?:AttachmentBrief, symbiosis = true) {
     const project = current.current.projects.find(p => p.id === projectId); if (!project) return;
     const id = conversationId || crypto.randomUUID();
-    const turn: Turn = { symbiosis:mode==='live'&&Boolean(lead)&&symbiosis, attachmentBrief, spendingMode, id: crypto.randomUUID(), prompt, createdAt: Date.now(), mode, context: { projectName: project.name, notes: project.notes }, engine: current.current.engine || defaultEngine, analytics: current.current.analytics, answers: {} };
+    const singleReporter=lead?requestedReporter(prompt,selected):undefined;
+    const turn: Turn = { singleReporter, symbiosis:!singleReporter&&mode==='live'&&Boolean(lead)&&symbiosis, attachmentBrief, spendingMode, id: crypto.randomUUID(), prompt, createdAt: Date.now(), mode, context: { projectName: project.name, notes: project.notes }, engine: current.current.engine || defaultEngine, analytics: current.current.analytics, answers: {} };
     mutate(w => {
       const existing = w.conversations.find(c => c.id === id);
       const conversation: Conversation = existing ? { ...existing, updatedAt: Date.now(), turns: [...existing.turns, turn] } : { id, projectId, title: prompt.slice(0, 70), createdAt: Date.now(), updatedAt: Date.now(), turns: [turn] };
@@ -166,3 +168,4 @@ export function useWorkbench() {
   }
   return { workspace, loaded, storageError, mutate, run, cancel, cancelConversation, submit, startCouncil, stopCouncil, approveResolution };
 }
+

@@ -1,4 +1,6 @@
 "use client";
+import {requestedReporter} from "@/lib/requested-reporter";
+
 import {AttachmentTray,useAttachments} from './attachment-tray';
 import {CouncilBuild} from "./council-build";
 
@@ -59,6 +61,9 @@ export function Workbench() {
   const conversation = wb.workspace.conversations.find(c => c.id === conversationId);
   const busy = conversation?.turns.some(t => councilActive(t) || Object.values(t.botRuns || {}).some(a => a?.status === "streaming") || Object.values(t.answers).some(a => a?.status === "streaming") || t.synthesis?.status === "streaming") ?? false;
   const anyBusy = wb.workspace.conversations.some(c => c.turns.some(t => councilActive(t) || Object.values(t.botRuns || {}).some(a => a?.status === "streaming") || Object.values(t.answers).some(a => a?.status === "streaming") || t.synthesis?.status === "streaming"));
+  const reporter=requestedReporter(prompt,selected);
+  const requiredModels=reporter?[reporter,finalEditor]:[...providerIds];
+  const missingRequired=requiredModels.some(id=>!config?.providers.find(p=>p.id===id)?.configured);
   const liveCount = config?.providers.filter(p => p.configured).length ?? 0;
   const activeMode = conversation?.turns[0]?.mode || mode;
   const conversations = wb.workspace.conversations.filter(c => c.projectId === project.id && c.title.toLowerCase().includes(search.toLowerCase())).sort((a, b) => b.updatedAt - a.updatedAt);
@@ -79,11 +84,11 @@ export function Workbench() {
   }, []);
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(""), 5000); return () => clearTimeout(timer); }, [notice]);
   function newConversation() { setConversationId(undefined); setPrompt(""); setSidebarOpen(false); textarea.current?.focus(); }
-  function toggleProvider(id: ProviderId) { if (masterMode) return; setSelected(ids => ids.includes(id) ? ids.filter(p => p !== id) : [...ids, id]); }
+  function toggleProvider(id: ProviderId) { if (masterMode) {setSelected([id]);return;} setSelected(ids => ids.includes(id) ? ids.filter(p => p !== id) : [...ids, id]); }
   async function submit(event: FormEvent) {
     event.preventDefault();
     if(attachments.busy||preparingAttachments)return;
-    if (!prompt.trim() || prompt.length > 12000 || !selected.length || (masterMode && activeMode === "live" && liveCount < providerIds.length) || busy || !wb.loaded || !config?.authenticated) return;
+    if (!prompt.trim() || prompt.length > 12000 || !selected.length || (masterMode && activeMode === "live" && missingRequired) || busy || !wb.loaded || !config?.authenticated) return;
     if(attachments.files.length && activeMode!=="live"){setNotice("Use Live mode to send attachments.");return;}
     setPreparingAttachments(true);try{const attachmentBrief=await attachments.prepare(prompt.trim());
     const id = wb.submit(prompt.trim(), project.id, conversationId, selected, activeMode, masterMode ? finalEditor : undefined, spendingMode, attachmentBrief, symbiosis);
@@ -165,7 +170,7 @@ export function Workbench() {
         <div className="council-options"><label><input type="checkbox" checked={masterMode} onChange={e => { setMasterMode(e.target.checked); if (e.target.checked) setSelected([...providerIds]); }}/>One combined answer</label>{masterMode && <><label><input type="checkbox" checked={symbiosis} onChange={e=>setSymbiosis(e.target.checked)}/>Auto specialist orchestration</label><label>Answer depth<select aria-label="API spending" value={spendingMode} onChange={e => setSpendingMode(e.target.value as SpendingMode)}><option value="economy">Focused</option><option value="thorough">Full council</option></select></label><label>Final editor<select aria-label="Final editor" value={finalEditor} onChange={e=>setFinalEditor(e.target.value as "claude"|"openai")}><option value="claude">Claude Fable 5.1</option><option value="openai">GPT Astra</option></select></label></>}</div>
         {preparingAttachments&&<p role="status">Reading attachments before generation…</p>}
         <textarea ref={textarea} value={prompt} onChange={e => setPrompt(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} placeholder={conversation ? "Keep the conversation going…" : "What’s on your mind? Give your models something to think about…"} aria-label="Your prompt" rows={2} maxLength={12000}/>
-        <div className="composer-bottom"><div className="composer-models-bottom"><span className="composer-label">SEND TO</span><div className="model-toggles"><button type="button" aria-pressed={selected.length === providerIds.length} className={`all-toggle ${selected.length === providerIds.length ? "selected" : ""}`} onClick={() => setSelected([...providerIds])}><Layers3 size={13}/>All six</button>{providerIds.map(id => <button type="button" key={id} aria-pressed={selected.includes(id)} className={`model-toggle ${id} ${selected.includes(id) ? "selected" : ""}`} onClick={() => toggleProvider(id)}><span>{providers[id].symbol}</span>{providers[id].name}{selected.includes(id) && <Check size={11}/>}</button>)}</div><span className="parallel-label">Parallel responses<Zap size={12}/></span></div><div className="send-controls"><span className="keyboard-hint">{prompt.length > 10000 ? `${prompt.length.toLocaleString()} / 12,000` : "Enter to send · Shift + Enter for a new line"}</span><button className="send-button" type="submit" disabled={attachments.busy || preparingAttachments || !prompt.trim() || !selected.length || (masterMode && activeMode === "live" && liveCount < providerIds.length) || busy || !wb.loaded || !config?.authenticated} aria-label="Send prompt"><ArrowUp size={19}/></button></div></div>
+        <div className="composer-bottom"><div className="composer-models-bottom"><span className="composer-label">SEND TO</span><div className="model-toggles"><button type="button" aria-pressed={selected.length === providerIds.length} className={`all-toggle ${selected.length === providerIds.length ? "selected" : ""}`} onClick={() => setSelected([...providerIds])}><Layers3 size={13}/>All six</button>{providerIds.map(id => <button type="button" key={id} aria-pressed={selected.includes(id)} className={`model-toggle ${id} ${selected.includes(id) ? "selected" : ""}`} onClick={() => toggleProvider(id)}><span>{providers[id].symbol}</span>{providers[id].name}{selected.includes(id) && <Check size={11}/>}</button>)}</div><span className="parallel-label">{masterMode ? reporter ? `${providers[reporter].name} → Boss` : "Council → Boss" : "Parallel responses"}<Zap size={12}/></span></div><div className="send-controls"><span className="keyboard-hint">{prompt.length > 10000 ? `${prompt.length.toLocaleString()} / 12,000` : "Enter to send · Shift + Enter for a new line"}</span><button className="send-button" type="submit" disabled={attachments.busy || preparingAttachments || !prompt.trim() || !selected.length || (masterMode && activeMode === "live" && missingRequired) || busy || !wb.loaded || !config?.authenticated} aria-label="Send prompt"><ArrowUp size={19}/></button></div></div>
       </form><div className="composer-disclaimer"><span className="live-dot"/>{activeMode === "demo" ? "Demo mode · Sample responses. No API calls or charges." : "Responses may be inaccurate. Verify important information."}<span className="footer-brand">sovereignOS</span></div></div>
     </div>
     {notice && <div className="toast" role="status">{notice}<button className="icon-button" aria-label="Dismiss notification" onClick={() => setNotice("")}><X size={14}/></button></div>}
@@ -186,6 +191,7 @@ export function Workbench() {
     {importData && <Modal title="Restore this workspace?" onClose={() => setImportData(undefined)}><p className="modal-intro">This backup contains {importData.projects.length} projects and {importData.conversations.length} conversations. Restoring replaces this browser’s current workspace.</p><div className="modal-actions"><button className="secondary-button" onClick={exportWorkspace}>Back up current</button><button className="primary-button" onClick={() => { wb.mutate(() => importData); setProjectId(importData.projects[0].id); newConversation(); setImportData(undefined); setNotice("Workspace restored."); }}>Restore backup</button></div></Modal>}
   </div>;
 }
+
 
 
 

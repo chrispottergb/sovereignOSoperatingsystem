@@ -37,7 +37,7 @@ export const ballotSchema = z.object({ provider: providerSchema, vote: voteSchem
 export const analyticsSchema = z.object({ platform: z.string().min(1).max(80), period: z.string().min(1).max(120), data: z.string().min(1).max(16000) });
 export const decisionSchema = z.object({ candidateId: z.string().min(1), rationale: z.string().min(1).max(2000), decidedAt: z.number() });
 export const generateSchema = z.object({
-  allowPartialCouncil:z.boolean().optional(),
+  singleReporter:providerSchema.optional(), allowPartialCouncil:z.boolean().optional(),
   spendingMode: z.enum(["economy", "thorough"]).optional(),
   provider: providerSchema, mode: z.enum(["live", "demo"]), kind: z.enum(["response", "synthesis"]),
   prompt: z.string().trim().min(1).max(12000), history: z.array(messageSchema).max(24).default([]),
@@ -47,7 +47,7 @@ export const generateSchema = z.object({
   sources: z.array(sourceSchema).max(providerIds.length).optional(),
   reviewPhase: z.enum(["research", "routing", "critique", "vote", "arbitrate", "audit", "master", "execute", "resolve", "adjudicate", "refine"]).optional(),
   critiques: z.array(sourceSchema).max(providerIds.length).optional(),
-  participants: z.array(providerSchema).min(2).max(providerIds.length).optional(),
+  participants: z.array(providerSchema).min(1).max(providerIds.length).optional(),
   assignment: assignmentSchema.optional(),
   engine: engineSchema.optional(),
   analytics: analyticsSchema.optional(),
@@ -57,6 +57,12 @@ export const generateSchema = z.object({
   advisorReviews: z.array(sourceSchema).max(2).optional(),
   round: z.number().int().min(1).max(3).optional(),
 }).superRefine((v, c) => {
+  if(v.singleReporter){
+    if(v.allowPartialCouncil || v.kind!=="synthesis" || !["research","resolve"].includes(v.reviewPhase||"") || v.participants?.length!==1 || v.participants[0]!==v.singleReporter)c.addIssue({code:"custom",message:"Single reporter requires one selected contributor and Boss review."});
+    if(v.reviewPhase==="research"&&v.provider!==v.singleReporter)c.addIssue({code:"custom",message:"Only the requested reporter may contribute."});
+    if(v.reviewPhase==="resolve"&&(!["openai","claude"].includes(v.provider)||v.sources?.length!==1||v.sources[0].provider!==v.singleReporter||v.critiques?.length||v.revisions?.length))c.addIssue({code:"custom",message:"Boss must review exactly the requested model report without council rounds."});
+    return;
+  }
   const members=v.allowPartialCouncil?v.participants:providerIds;
   const expected=members?.length||6;
   if(v.allowPartialCouncil&&(!members||members.length<3||new Set(members).size!==members.length))c.addIssue({code:"custom",message:"Reduced council requires at least three unique participants."});
@@ -103,7 +109,7 @@ export type Answer = z.infer<typeof answerSchema>;
 export const councilSchema = z.object({ protocol: z.literal("chat").optional(), status: z.enum(["researching", "routing", "answering", "reviewing", "voting", "planning", "arbitrating", "auditing", "awaiting_decision", "complete", "unresolved", "error", "cancelled"]), participants: z.array(providerSchema), lead: providerSchema, message: z.string().optional() });
 export const roundSchema = z.object({ number: z.number(), reviews: z.record(providerSchema, answerSchema), routing: answerSchema.optional(), candidate: candidateSchema.optional(), votes: z.record(providerSchema, answerSchema) });
 export const attemptSchema = z.object({ id: z.string(), provider: providerSchema, phase: z.string(), startedAt: z.number(), status: z.enum(["streaming", "complete", "error", "cancelled"]), model: z.string().optional(), usage: usageSchema.optional() });
-export const turnSchema = z.object({ previousSynthesis:answerSchema.optional(), allowPartialCouncil:z.boolean().optional(), useGemini:z.boolean().optional(), gemini:z.object({provider:z.string(),model:z.string(),text:z.string().max(10000),usage:usageSchema,completedAt:z.number()}).optional(), symbiosis:z.boolean().optional(), orchestration:z.object({plan:symbiosisPlanSchema,model:z.string(),usage:usageSchema,completedAt:z.number()}).optional(), grokbot:z.object({text:z.string().max(10000),model:z.string(),usage:usageSchema,citations:z.array(citationSchema).default([]),completedAt:z.number()}).optional(), attachmentBrief:attachmentBriefSchema.optional(), museOptions:z.object({model:z.enum(["muse-spark-1.3","muse-spark-1.2","muse-spark-1.1"]),reasoning:z.enum(["low","medium"])}).optional(), useMuse:z.boolean().optional(), muse:z.object({provider:z.string(),model:z.string(),text:z.string().max(10000),usage:usageSchema,completedAt:z.number()}).optional(), buildJobId:z.string().optional(), sharedEvidence: z.string().max(30000).optional(), revisions: z.record(providerSchema, answerSchema).optional(), spendingMode: z.enum(["economy", "thorough"]).optional(), attempts: z.array(attemptSchema).optional(), id: z.string(), prompt: z.string(), createdAt: z.number(), mode: z.enum(["live", "demo"]), context: contextSchema, answers: z.record(providerSchema, answerSchema), synthesis: answerSchema.optional(), routing: answerSchema.optional(), assignments: routingSchema.optional(), engine: engineSchema.optional(), reviews: z.record(providerSchema, answerSchema).optional(), council: councilSchema.optional(), analytics: analyticsSchema.optional(), candidate: candidateSchema.optional(), votes: z.record(providerSchema, answerSchema).optional(), ballots: z.array(ballotSchema).optional(), rounds: z.array(roundSchema).optional(), lockedAt: z.number().optional(), botRuns: z.record(providerSchema, answerSchema).optional(), arbitration: answerSchema.optional(), audit: answerSchema.optional(), userDecision: decisionSchema.optional() });
+export const turnSchema = z.object({ previousSynthesis:answerSchema.optional(), singleReporter:providerSchema.optional(), allowPartialCouncil:z.boolean().optional(), useGemini:z.boolean().optional(), gemini:z.object({provider:z.string(),model:z.string(),text:z.string().max(10000),usage:usageSchema,completedAt:z.number()}).optional(), symbiosis:z.boolean().optional(), orchestration:z.object({plan:symbiosisPlanSchema,model:z.string(),usage:usageSchema,completedAt:z.number()}).optional(), grokbot:z.object({text:z.string().max(10000),model:z.string(),usage:usageSchema,citations:z.array(citationSchema).default([]),completedAt:z.number()}).optional(), attachmentBrief:attachmentBriefSchema.optional(), museOptions:z.object({model:z.enum(["muse-spark-1.3","muse-spark-1.2","muse-spark-1.1"]),reasoning:z.enum(["low","medium"])}).optional(), useMuse:z.boolean().optional(), muse:z.object({provider:z.string(),model:z.string(),text:z.string().max(10000),usage:usageSchema,completedAt:z.number()}).optional(), buildJobId:z.string().optional(), sharedEvidence: z.string().max(30000).optional(), revisions: z.record(providerSchema, answerSchema).optional(), spendingMode: z.enum(["economy", "thorough"]).optional(), attempts: z.array(attemptSchema).optional(), id: z.string(), prompt: z.string(), createdAt: z.number(), mode: z.enum(["live", "demo"]), context: contextSchema, answers: z.record(providerSchema, answerSchema), synthesis: answerSchema.optional(), routing: answerSchema.optional(), assignments: routingSchema.optional(), engine: engineSchema.optional(), reviews: z.record(providerSchema, answerSchema).optional(), council: councilSchema.optional(), analytics: analyticsSchema.optional(), candidate: candidateSchema.optional(), votes: z.record(providerSchema, answerSchema).optional(), ballots: z.array(ballotSchema).optional(), rounds: z.array(roundSchema).optional(), lockedAt: z.number().optional(), botRuns: z.record(providerSchema, answerSchema).optional(), arbitration: answerSchema.optional(), audit: answerSchema.optional(), userDecision: decisionSchema.optional() });
 export type Turn = z.infer<typeof turnSchema>;
 export const conversationSchema = z.object({ id: z.string(), projectId: z.string(), title: z.string(), createdAt: z.number(), updatedAt: z.number(), turns: z.array(turnSchema) });
 export type Conversation = z.infer<typeof conversationSchema>;
@@ -111,3 +117,4 @@ export const projectSchema = z.object({ id: z.string(), name: z.string().min(1).
 export type Project = z.infer<typeof projectSchema>;
 export const workspaceSchema = z.object({ version: z.literal(1), projects: z.array(projectSchema).min(1), conversations: z.array(conversationSchema), engine: engineSchema.optional(), analytics: analyticsSchema.optional() });
 export type Workspace = z.infer<typeof workspaceSchema>;
+
