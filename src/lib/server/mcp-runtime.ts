@@ -6,7 +6,7 @@ import type {SymbiosisPlan} from '../symbiosis';
 import {CouncilCheckpoint} from '../tools/council-checkpoint';
 import {geminiConfig} from './gemini';
 import {museConfig} from './muse';
-import {readFile} from 'node:fs/promises';
+import {readFile,access} from 'node:fs/promises';
 import {listSpecialists,specialistJobs} from './specialists';
 import {specialistHelp} from '../specialists';
 import path from 'node:path';
@@ -35,7 +35,8 @@ export async function capabilities(){const remote=gatewayConfigured()?await gate
 export async function listConnectors(){if(gatewayConfigured())return gateway({action:'list_connectors'});if(!storageReady())return {configured:false,connectors:[]};return {configured:true,connectors:await db('astra_connectors?select=id,provider,label,enabled,permissions&order=created_at.desc')};}
 export async function readConnectors(ids:unknown){const parsed=z.array(z.string().uuid()).max(20).parse(ids);if(gatewayConfigured())return gateway({action:'read_connectors',ids:parsed});if(!storageReady())throw Error('Supabase credentials are not configured for this MCP process.');return connectorSnapshot(parsed);}
 export async function runSharedCouncil(request:unknown,hub:SharedHub,signal:AbortSignal,connectorIds:string[]=[],complete:Complete|undefined=undefined,useMuse=false,runId?:string,spendingMode:'economy'|'thorough'='economy',autoSpecialists=false,useGemini=false){
- if(gatewayConfigured()&&!complete){
+ const legacyRun=runId?await access(path.join(new CouncilCheckpoint(hub.root,runId).directory,'request.json')).then(()=>true,()=>false):false;
+ if(gatewayConfigured()&&!complete&&!legacyRun){
   if(runId){const {run}=await gateway({action:'engine_read',id:runId},signal);return {run_id:run.id,status:run.status,final:run.state.final||'The saved engine run is still in progress. Read this run again for its final outcome.',not_checked:run.state.warnings||[]};}
   const input=requestSchema.parse(request);await hub.init();
   const context=JSON.stringify({project:await hub.context(),memory:await hub.memory(),files:await hub.list({limit:30}),source:input.source_text,constraints:input.constraints,format:input.output_format,textType:input.text_type,bpm:input.bpm,connectors:connectorIds.length?await readConnectors(connectorIds):undefined});
