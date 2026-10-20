@@ -10,10 +10,12 @@ test('saved cooperative work survives reload, shows one final and holds executio
   const snapshot=completed?{...run,status:'complete',state:{...run.state,phase:'done',agreement:'accepted',final:'Concrete parser implementation and next choices.\n\nReview: Astra and Fable accepted this same revision.'}}:run;
   return r.fulfill({json:r.request().url().includes('?id=')?{run:snapshot}:{runs:[snapshot]}});
  });
- await page.goto('/');await page.getByLabel('Your prompt').fill('Build a practical parser');await page.getByRole('button',{name:'Send prompt',exact:true}).click();
+ await page.goto('/');await expect(page.getByLabel('Hugging Face specialist')).not.toBeVisible();await page.getByLabel('Your prompt').fill('Build a practical parser');await page.getByRole('button',{name:'Send prompt',exact:true}).click();
  await expect(page.getByText('Saved engine · routing, reviews & execution choices',{exact:true})).toBeVisible();
  await expect.poll(()=>page.evaluate(()=>localStorage.getItem('sovereign-os.workspace.v1')||'')).toContain('engineRunId');
  completed=true;await page.reload();await page.getByText('Saved engine runs',{exact:true}).click();await page.getByRole('button',{name:'Build a practical parser · complete',exact:true}).click();await expect(page.getByRole('heading',{name:'Final outcome',exact:true})).toBeVisible();await expect(page.getByRole('article',{name:'SovereignOS response'})).toContainText('Concrete parser implementation');expect(launches).toBe(1);expect(executes).toBe(0);
+ const content=await page.locator('main').boundingBox(),composer=await page.locator('.composer-wrap').boundingBox();expect(content).not.toBeNull();expect(composer).not.toBeNull();expect(composer!.y).toBeGreaterThanOrEqual(content!.y+content!.height-1);
+ await page.getByLabel('Your prompt').scrollIntoViewIfNeeded();await page.screenshot({path:'test-results/composer-'+test.info().project.name+'.png'});
  await page.getByText('Saved engine · routing, reviews & execution choices',{exact:true}).click();await page.getByRole('button',{name:'Prepare saved artifact',exact:true}).click();await expect(page.getByRole('region',{name:'Exact action approval'})).toContainText('Concrete parser implementation');expect(executes).toBe(0);
  await page.getByRole('button',{name:'Approve this exact action',exact:true}).click();await expect(page.getByRole('link',{name:'Download saved outcome'})).toBeVisible();expect(executes).toBe(1);
 });

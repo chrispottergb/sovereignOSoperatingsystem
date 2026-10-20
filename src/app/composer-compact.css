@@ -26,3 +26,23 @@
 }
 
 .final-outcome{scroll-margin-top:24px;margin:20px 0;border-top:2px solid #c9ecac;padding-top:16px}.final-outcome-heading{font-size:20px;color:#c9ecac;margin:0 0 12px}.final-outcome:target{outline:2px solid #c9ecac60;outline-offset:8px}.workflow-summary>a.secondary-button{display:inline-block;margin-right:8px;text-decoration:none}
+
+/* The composer occupies its own space instead of covering the conversation. */
+.main-shell>.composer-wrap{position:static;bottom:auto;z-index:auto;background:none;flex-shrink:0}
+.main-shell{min-width:0}
+.composer-options{margin:0 17px;border-bottom:1px solid #ffffff10}
+.composer-options>summary{cursor:pointer;width:fit-content;padding:6px 0;font-size:11px;color:#a5b59e}
+.composer-options .council-options{padding:8px 0 12px;margin:0;gap:12px;flex-wrap:wrap}
+.composer-options select{max-width:100%}
+.composer>textarea{min-height:54px;max-height:120px;overflow-y:auto}
+.composer>p[role=status]{margin:6px 17px;font-size:12px}
+@media(max-width:760px){
+ .composer>textarea{font-size:16px}
+ .composer-options{margin:0 12px}
+ .composer-options .council-options>label{max-width:100%;min-width:0}
+ .composer-models-bottom{flex:1;overflow:hidden}
+ .composer-models-bottom .model-toggles{flex-wrap:nowrap;overflow-x:auto;max-width:100%;padding:3px 0}
+ .composer-models-bottom .model-toggles button{flex-shrink:0;min-height:32px}
+ .composer-bottom .send-controls{flex-shrink:0}
+ .composer-bottom{flex-wrap:nowrap;padding-left:12px;padding-right:12px}
+}
