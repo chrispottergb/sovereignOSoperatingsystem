@@ -1,12 +1,13 @@
 import {beforeEach,it,expect,vi} from 'vitest';
-const m=vi.hoisted(()=>({db:vi.fn(),store:vi.fn(),read:vi.fn(),send:vi.fn()}));
+const m=vi.hoisted(()=>({db:vi.fn(),store:vi.fn(),read:vi.fn(),send:vi.fn(),gmail:vi.fn()}));
 vi.mock('../src/lib/server/astra-store',()=>({db:m.db,storeArtifact:m.store}));
 vi.mock('../src/lib/server/engine-store',()=>({engineRead:m.read}));
-vi.mock('../src/lib/server/aya-gmail',()=>({sendAyaGmailReceipt:m.send,AYA_RECIPIENT:'owner@example.com'}));
-import {executeEngineAction,actionHash} from '../src/lib/server/engine-actions';
+vi.mock('../src/lib/server/aya-gmail',()=>({sendAyaGmailReceipt:m.send,gmailStatus:m.gmail,AYA_RECIPIENT:'owner@example.com'}));
+import {executeEngineAction,prepareEngineAction,actionHash} from '../src/lib/server/engine-actions';
 const payload={input:{task_name:'Review',action:'Review only',destination:'Aya',content:'Draft',timing:'now',approval:'draft only'}};
 const fixture=()=>({id:'id',owner:'owner',run_id:'run',kind:'handoff_to_aya',payload,content_hash:actionHash('handoff_to_aya',payload),status:'prepared',expires_at:new Date(Date.now()+60000).toISOString()});
 beforeEach(()=>vi.resetAllMocks());
+it('blocks an unconnected Gmail handoff before preparing approval or sending',async()=>{m.read.mockResolvedValue({status:'complete',state:{final:'Outcome'}});m.gmail.mockResolvedValue({configured:true,connected:false});await expect(prepareEngineAction('owner','run','handoff_to_aya')).rejects.toThrow('Connect Gmail');expect(m.db).not.toHaveBeenCalled();expect(m.send).not.toHaveBeenCalled();});
 it('requires an exact hash before dispatch',async()=>{m.db.mockResolvedValue([fixture()]);await expect(executeEngineAction('owner','id','wrong')).rejects.toThrow();expect(m.send).not.toHaveBeenCalled();});
 it('cannot dispatch an already claimed or uncertain email twice',async()=>{for(const status of ['executing','submitted','uncertain','completed']){m.db.mockResolvedValue([{...fixture(),status}]);await executeEngineAction('owner','id',fixture().content_hash);}expect(m.send).not.toHaveBeenCalled();});
 it('uses an atomic unexpired claim, then preserves the Gmail receipt as submitted',async()=>{m.db.mockResolvedValueOnce([fixture()]).mockResolvedValueOnce([fixture()]).mockResolvedValueOnce([]).mockResolvedValueOnce([{...fixture(),status:'submitted'}]);m.send.mockResolvedValue({status:'submitted',messageId:'proof',threadId:'thread'});const r=await executeEngineAction('owner','id',fixture().content_hash);expect(m.send).toHaveBeenCalledOnce();expect(m.db.mock.calls[1][0]).toContain('status=eq.prepared');expect(m.db.mock.calls[1][0]).toContain('expires_at=gt.');expect(JSON.parse(m.db.mock.calls[2][1].body)).toMatchObject({status:'submitted',receipt:{messageId:'proof'}});expect(r.status).toBe('submitted');});
